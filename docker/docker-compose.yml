@@ -1,0 +1,14 @@
+services:
+  foampilot:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../cases:/home/openfoam/run
+      - ../templates:/home/openfoam/templates
+      - ../backend:/app
+    environment:
+      FOAM_RUN: /home/openfoam/run
+      FOAM_TEMPLATES: /home/openfoam/templates
