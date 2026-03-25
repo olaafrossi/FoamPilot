@@ -417,5 +417,7 @@ FodyWeavers.xsd
 *.msm
 *.msp
 
-# Templates
+# OpenFoam Templates
 templates/
+# OpenFoam Cases
+cases/
