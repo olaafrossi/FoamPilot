@@ -5,6 +5,14 @@ public sealed partial class WizardStepIndicator : UserControl
     public int StepNumber { get; set; }
     public string StepTitle { get; set; } = "";
 
+    private static readonly SolidColorBrush PrimaryBrush = new(Windows.UI.Color.FromArgb(255, 199, 191, 255));
+    private static readonly SolidColorBrush DarkTextBrush = new(Windows.UI.Color.FromArgb(255, 28, 27, 31));
+    private static readonly SolidColorBrush GreenBrush = new(Windows.UI.Color.FromArgb(255, 76, 175, 80));
+    private static readonly SolidColorBrush GreenFaintBrush = new(Windows.UI.Color.FromArgb(60, 76, 175, 80));
+    private static readonly SolidColorBrush WhiteBrush = new(Windows.UI.Color.FromArgb(255, 255, 255, 255));
+    private static readonly SolidColorBrush GrayBrush = new(Windows.UI.Color.FromArgb(255, 100, 100, 100));
+    private static readonly SolidColorBrush DimBrush = new(Windows.UI.Color.FromArgb(255, 60, 60, 60));
+
     public WizardStepIndicator()
     {
         this.InitializeComponent();
@@ -16,33 +24,32 @@ public sealed partial class WizardStepIndicator : UserControl
         };
     }
 
-    /// <summary>Set visual state: "locked", "current", or "complete".</summary>
     public void SetState(string state)
     {
         switch (state)
         {
             case "current":
-                NumberBorder.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 199, 191, 255)); // #C7BFFF
+                NumberBorder.Background = PrimaryBrush;
                 NumberText.Text = StepNumber.ToString();
-                NumberText.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 28, 27, 31)); // dark text
+                NumberText.Foreground = DarkTextBrush;
                 TitleText.Opacity = 1.0;
-                StepBorder.BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 199, 191, 255));
+                StepBorder.BorderBrush = PrimaryBrush;
                 break;
 
             case "complete":
-                NumberBorder.Background = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 76, 175, 80)); // green
-                NumberText.Text = "✓";
-                NumberText.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 255, 255, 255));
+                NumberBorder.Background = GreenBrush;
+                NumberText.Text = "\u2713";
+                NumberText.Foreground = WhiteBrush;
                 TitleText.Opacity = 0.7;
-                StepBorder.BorderBrush = new SolidColorBrush(Windows.UI.Color.FromArgb(60, 76, 175, 80));
+                StepBorder.BorderBrush = GreenFaintBrush;
                 break;
 
-            default: // locked
-                NumberBorder.Background = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"];
+            default:
+                NumberBorder.Background = DimBrush;
                 NumberText.Text = StepNumber.ToString();
-                NumberText.Foreground = new SolidColorBrush(Windows.UI.Color.FromArgb(255, 150, 150, 150));
+                NumberText.Foreground = GrayBrush;
                 TitleText.Opacity = 0.4;
-                StepBorder.BorderBrush = (Microsoft.UI.Xaml.Media.Brush)Application.Current.Resources["CardStrokeColorDefaultBrush"];
+                StepBorder.BorderBrush = DimBrush;
                 break;
         }
     }

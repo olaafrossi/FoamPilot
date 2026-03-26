@@ -108,6 +108,14 @@ class PipelineResponse(BaseModel):
     validation_errors: list[dict] = []
 
 
+class TemplateStepInfo(BaseModel):
+    title: str = ""
+    description: str = ""
+    files: list[str] = []
+    commands: list[str] = []
+    tip: str = ""
+
+
 class TemplateInfo(BaseModel):
     name: str
     path: str
@@ -117,3 +125,4 @@ class TemplateInfo(BaseModel):
     estimated_runtime: str = ""
     learning_objectives: list[str] = []
     fields: list[str] = []
+    steps: dict[str, TemplateStepInfo] = {}

@@ -12,3 +12,9 @@ services:
     environment:
       FOAM_RUN: /home/openfoam/run
       FOAM_TEMPLATES: /home/openfoam/templates
+      FOAM_CORES: ${FOAM_CORES:-10}
+    deploy:
+      resources:
+        limits:
+          cpus: "${DOCKER_CPUS:-10}"
+          memory: "${DOCKER_MEMORY:-16g}"

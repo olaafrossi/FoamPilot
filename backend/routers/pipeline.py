@@ -19,6 +19,7 @@ from models import (
     PipelineResetRequest,
     PipelineResponse,
     TemplateInfo,
+    TemplateStepInfo,
     ValidationResultResponse,
 )
 from services.foam_runner import (
@@ -261,6 +262,19 @@ async def list_templates_with_metadata():
         if not (case_dir / "system").is_dir():
             continue
 
+        # Parse step metadata if present
+        raw_steps = meta.get("steps", {})
+        steps = {}
+        for step_key, step_data in raw_steps.items():
+            if isinstance(step_data, dict):
+                steps[step_key] = TemplateStepInfo(
+                    title=step_data.get("title", ""),
+                    description=step_data.get("description", ""),
+                    files=step_data.get("files", []),
+                    commands=step_data.get("commands", []),
+                    tip=step_data.get("tip", ""),
+                )
+
         templates.append(
             TemplateInfo(
                 name=meta.get("name", entry.name),
@@ -271,6 +285,7 @@ async def list_templates_with_metadata():
                 estimated_runtime=meta.get("estimated_runtime", ""),
                 learning_objectives=meta.get("learning_objectives", []),
                 fields=meta.get("fields", []),
+                steps=steps,
             )
         )
 

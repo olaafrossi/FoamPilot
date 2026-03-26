@@ -16,6 +16,7 @@ from models import JobStatusEnum
 
 FOAM_RUN = os.environ.get("FOAM_RUN", "/home/openfoam/run")
 FOAM_TEMPLATES = os.environ.get("FOAM_TEMPLATES", "/home/openfoam/templates")
+FOAM_CORES = int(os.environ.get("FOAM_CORES", "1"))
 LOG_BUFFER_SIZE = 5000
 
 

@@ -23,7 +23,7 @@ RUN add-apt-repository -y ppa:deadsnakes/ppa && \
 
 # ── Python dependencies ──────────────────────────────────────────────
 RUN pip install --no-cache-dir --break-system-packages \
-        fastapi uvicorn[standard] websockets
+        fastapi uvicorn[standard] websockets python-multipart
 
 # ── Non-root user ────────────────────────────────────────────────────
 RUN useradd -m -s /bin/bash openfoam && \
