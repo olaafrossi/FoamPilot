@@ -143,4 +143,19 @@ public sealed class OpenFoamApiClient : IOpenFoamApiClient
             EndTime,
             ExitCode);
     }
+
+    private sealed record FileNodeDto(
+        string Name,
+        string Path,
+        string Type,
+        List<FileNodeDto>? Children)
+    {
+        public FileNode ToModel() => new(
+            Name,
+            Path,
+            Type,
+            Children?.Select(c => c.ToModel()).ToImmutableList());
+    }
+
+    private sealed record FileContentDto(string Content);
 }

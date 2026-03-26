@@ -1,0 +1,192 @@
+<Page x:Class="FoamPilot.Ui.Presentation.CaseBrowserPage"
+    x:Name="CaseBrowserRoot"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:uer="using:Uno.Extensions.Reactive.UI"
+    Background="{ThemeResource BackgroundBrush}">
+
+  <Grid Padding="24" RowSpacing="16">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+
+    <!-- Toolbar -->
+    <Grid>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+
+      <TextBlock Text="Case Browser"
+          Style="{ThemeResource TitleLargeTextBlockStyle}"
+          VerticalAlignment="Center" />
+
+      <Button Grid.Column="2"
+          Content="New Case"
+          Click="NewCase_Click"
+          Margin="0,0,8,0">
+        <Button.KeyboardAccelerators>
+          <KeyboardAccelerator Modifiers="Control" Key="N" />
+        </Button.KeyboardAccelerators>
+      </Button>
+
+      <Button Grid.Column="3"
+          Content="Refresh"
+          Command="{Binding Cases.Refresh}" />
+    </Grid>
+
+    <!-- Cases Feed -->
+    <uer:FeedView Source="{Binding Cases}"
+        Grid.Row="1">
+
+      <!-- Value template: case cards in a GridView -->
+      <uer:FeedView.ValueTemplate>
+        <DataTemplate>
+          <GridView ItemsSource="{Binding}"
+              SelectionMode="Single"
+              Padding="0,0,0,16">
+            <GridView.ItemTemplate>
+              <DataTemplate>
+                <Border BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1"
+                    CornerRadius="8"
+                    Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                    Padding="16"
+                    Width="280"
+                    Margin="0,0,12,12">
+                  <StackPanel Spacing="8">
+
+                    <!-- Case name -->
+                    <TextBlock Text="{Binding Name}"
+                        Style="{ThemeResource BodyStrongTextBlockStyle}"
+                        TextTrimming="CharacterEllipsis"
+                        MaxLines="1" />
+
+                    <!-- Last modified -->
+                    <TextBlock Text="{Binding LastModified}"
+                        Style="{ThemeResource CaptionTextBlockStyle}"
+                        Opacity="0.6" />
+
+                    <!-- Status badges -->
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                      <StackPanel Orientation="Horizontal" Spacing="4"
+                          Visibility="{Binding HasMesh}">
+                        <Ellipse Width="8" Height="8" Fill="Green" />
+                        <TextBlock Text="Mesh"
+                            Style="{ThemeResource CaptionTextBlockStyle}" />
+                      </StackPanel>
+                      <StackPanel Orientation="Horizontal" Spacing="4"
+                          Visibility="{Binding HasResults}">
+                        <Ellipse Width="8" Height="8" Fill="DodgerBlue" />
+                        <TextBlock Text="Results"
+                            Style="{ThemeResource CaptionTextBlockStyle}" />
+                      </StackPanel>
+                    </StackPanel>
+
+                    <!-- Action buttons -->
+                    <StackPanel Orientation="Horizontal" Spacing="4"
+                        Margin="0,4,0,0">
+                      <Button Content="Clone"
+                          Command="{Binding DataContext.CloneCase, ElementName=CaseBrowserRoot}"
+                          CommandParameter="{Binding}"
+                          Padding="8,4" />
+                      <Button Content="Delete"
+                          Command="{Binding DataContext.DeleteCase, ElementName=CaseBrowserRoot}"
+                          CommandParameter="{Binding}"
+                          Padding="8,4" />
+                      <Button Content="Open Folder"
+                          Command="{Binding DataContext.OpenFolder, ElementName=CaseBrowserRoot}"
+                          CommandParameter="{Binding}"
+                          Padding="8,4" />
+                    </StackPanel>
+
+                  </StackPanel>
+                </Border>
+              </DataTemplate>
+            </GridView.ItemTemplate>
+          </GridView>
+        </DataTemplate>
+      </uer:FeedView.ValueTemplate>
+
+      <!-- Loading template -->
+      <uer:FeedView.ProgressTemplate>
+        <DataTemplate>
+          <ProgressRing IsActive="True"
+              HorizontalAlignment="Center"
+              VerticalAlignment="Center" />
+        </DataTemplate>
+      </uer:FeedView.ProgressTemplate>
+
+      <!-- Empty template -->
+      <uer:FeedView.NoneTemplate>
+        <DataTemplate>
+          <StackPanel HorizontalAlignment="Center"
+              VerticalAlignment="Center"
+              Spacing="8">
+            <TextBlock Text="No cases found. Create one from a template."
+                Style="{ThemeResource BodyLargeTextBlockStyle}"
+                HorizontalAlignment="Center"
+                Opacity="0.6" />
+          </StackPanel>
+        </DataTemplate>
+      </uer:FeedView.NoneTemplate>
+
+      <!-- Error template -->
+      <uer:FeedView.ErrorTemplate>
+        <DataTemplate>
+          <StackPanel HorizontalAlignment="Center"
+              VerticalAlignment="Center"
+              Spacing="12">
+            <TextBlock Text="Failed to load cases. Is the backend running?"
+                Style="{ThemeResource BodyLargeTextBlockStyle}"
+                Foreground="Red"
+                HorizontalAlignment="Center" />
+            <Button Content="Retry"
+                HorizontalAlignment="Center"
+                Command="{Binding Refresh}" />
+          </StackPanel>
+        </DataTemplate>
+      </uer:FeedView.ErrorTemplate>
+
+    </uer:FeedView>
+
+    <!-- New Case ContentDialog -->
+    <ContentDialog x:Name="NewCaseDialog"
+        Title="New Case"
+        PrimaryButtonText="Create"
+        CloseButtonText="Cancel"
+        DefaultButton="Primary"
+        XamlRoot="{x:Bind XamlRoot}">
+      <StackPanel Spacing="16" MinWidth="320">
+
+        <!-- Template selector -->
+        <uer:FeedView Source="{Binding Templates}">
+          <uer:FeedView.ValueTemplate>
+            <DataTemplate>
+              <ComboBox Header="Template"
+                  ItemsSource="{Binding}"
+                  SelectedItem="{Binding DataContext.SelectedTemplate, ElementName=CaseBrowserRoot, Mode=TwoWay}"
+                  HorizontalAlignment="Stretch"
+                  PlaceholderText="Select a template..." />
+            </DataTemplate>
+          </uer:FeedView.ValueTemplate>
+          <uer:FeedView.ProgressTemplate>
+            <DataTemplate>
+              <ProgressRing IsActive="True" Width="24" Height="24" />
+            </DataTemplate>
+          </uer:FeedView.ProgressTemplate>
+        </uer:FeedView>
+
+        <!-- Case name -->
+        <TextBox Header="Case Name"
+            Text="{Binding NewCaseName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+            PlaceholderText="e.g. mySimulation" />
+
+      </StackPanel>
+    </ContentDialog>
+
+  </Grid>
+</Page>

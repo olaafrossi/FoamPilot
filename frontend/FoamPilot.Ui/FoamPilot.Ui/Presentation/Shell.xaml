@@ -20,7 +20,7 @@
         <muxc:NavigationViewItem Content="Dashboard"
             uen:Navigation.Request="Dashboard"
             Icon="Home" />
-        <muxc:NavigationViewItem Content="Cases"
+        <muxc:NavigationViewItem Content="Case Browser"
             uen:Navigation.Request="Cases"
             Icon="AllApps" />
         <muxc:NavigationViewItem Content="Run Control"

@@ -63,3 +63,13 @@ class JobStatus(BaseModel):
 class LogLine(BaseModel):
     line: str
     stream: str  # "stdout" | "stderr"
+
+
+# ── Files ────────────────────────────────────────────────────────────
+
+
+class FileNode(BaseModel):
+    name: str
+    path: str
+    type: str  # "file" | "dir"
+    children: list["FileNode"] | None = None
