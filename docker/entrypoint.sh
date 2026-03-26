@@ -13,6 +13,15 @@ else
     exit 1
 fi
 
+# Re-apply our FOAM_RUN after OpenFOAM bashrc overwrites it.
+# Docker-compose sets FOAM_RUN=/home/openfoam/run (the mounted volume).
+# OpenFOAM's bashrc resets it to $WM_PROJECT_USER_DIR/run which is NOT mounted.
+if [ -n "$FOAM_RUN_OVERRIDE" ]; then
+    export FOAM_RUN="$FOAM_RUN_OVERRIDE"
+elif [ -d "/home/openfoam/run" ]; then
+    export FOAM_RUN="/home/openfoam/run"
+fi
+
 set -eo pipefail
 
 # ── Ensure run directory exists and is writable ──────────────────────

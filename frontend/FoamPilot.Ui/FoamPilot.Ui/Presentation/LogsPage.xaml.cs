@@ -1,123 +1,160 @@
-using LiveChartsCore.SkiaSharpView;
+using System.Net.Http;
+using System.Net.WebSockets;
+using System.Text;
+using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 
 namespace FoamPilot.Ui.Presentation;
 
 public sealed partial class LogsPage : Page
 {
-    private long _lastLogCount;
+    private readonly HttpClient _http;
+    private readonly string _backendUrl;
+    private CancellationTokenSource? _streamCts;
 
     public LogsPage()
     {
         this.InitializeComponent();
-        this.Loaded += OnLoaded;
+
+        var config = App.Services?.GetService<IOptions<AppConfig>>()?.Value ?? new AppConfig();
+        _http = new HttpClient { BaseAddress = new Uri(config.BackendUrl) };
+        _backendUrl = config.BackendUrl;
+
+        this.Loaded += async (_, _) => await LoadJobs();
+        this.Unloaded += (_, _) => _streamCts?.Cancel();
     }
 
-    private void OnLoaded(object sender, RoutedEventArgs e)
+    private async Task LoadJobs()
     {
-        // Configure axes for residuals chart
-        ResidualChart.XAxes = new Axis[] { new() { Name = "Iteration" } };
-        ResidualChart.YAxes = new Axis[]
+        try
         {
-            new LogaritmicAxis(10)
+            var resp = await _http.GetAsync("/jobs");
+            if (!resp.IsSuccessStatusCode) return;
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+            var items = doc.RootElement.EnumerateArray()
+                .OrderByDescending(j => j.TryGetProperty("start_time", out var st) && st.ValueKind != JsonValueKind.Null ? st.GetString() : "")
+                .Select(j =>
+                {
+                    var id = j.GetProperty("job_id").GetString() ?? "";
+                    var cmds = string.Join(", ", j.GetProperty("commands").EnumerateArray().Select(c => c.GetString()));
+                    var caseName = j.GetProperty("case_name").GetString() ?? "";
+                    var status = j.GetProperty("status").GetString() ?? "";
+                    return new JobItem { Id = id, Display = $"{caseName} — {cmds} ({status})", Status = status };
+                }).ToList();
+
+            JobCombo.ItemsSource = items;
+            JobCombo.DisplayMemberPath = "Display";
+            if (items.Count > 0) JobCombo.SelectedIndex = 0;
+        }
+        catch (Exception ex) { StatusText.Text = $"Error: {ex.Message}"; }
+    }
+
+    private async void JobCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (JobCombo.SelectedItem is not JobItem job) return;
+
+        // Cancel previous stream
+        _streamCts?.Cancel();
+        _streamCts = new CancellationTokenSource();
+        LogOutput.Text = "";
+
+        if (job.Status is "running" or "queued")
+        {
+            StatusText.Text = "Streaming live...";
+            await StreamLogs(job.Id, _streamCts.Token);
+        }
+        else
+        {
+            StatusText.Text = "Loading completed log...";
+            await LoadFullLog(job.Id);
+        }
+    }
+
+    private async Task LoadFullLog(string jobId)
+    {
+        try
+        {
+            var resp = await _http.GetAsync($"/jobs/{jobId}/log");
+            var text = await resp.Content.ReadAsStringAsync();
+            DispatcherQueue.TryEnqueue(() =>
             {
-                Labeler = value => Math.Pow(10, value).ToString("E1"),
-                MinLimit = Math.Log10(1e-10),
-            }
-        };
-
-        // Find the ComboBox inside the FeedView after it renders
-        FindAndBindComboBox();
-
-        // Start auto-scroll polling via DispatcherTimer
-        var scrollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
-        scrollTimer.Tick += OnScrollTimerTick;
-        scrollTimer.Start();
+                LogOutput.Text = text;
+                StatusText.Text = $"Log loaded ({text.Split('\n').Length} lines).";
+                if (AutoScrollToggle.IsOn)
+                    LogScroll.ChangeView(null, LogScroll.ScrollableHeight, null);
+            });
+        }
+        catch (Exception ex) { DispatcherQueue.TryEnqueue(() => StatusText.Text = $"Error: {ex.Message}"); }
     }
 
-    private void OnScrollTimerTick(object? sender, object e)
+    private async Task StreamLogs(string jobId, CancellationToken ct)
     {
-        var model = GetModel();
-        if (model is null) return;
+        var wsScheme = _backendUrl.StartsWith("https") ? "wss" : "ws";
+        var wsHost = _backendUrl.Replace("http://", "").Replace("https://", "");
+        var wsUrl = $"{wsScheme}://{wsHost}/logs/{jobId}";
 
-        // Check if auto-scroll is enabled and log has new content
-        var logLines = model.LogLines;
-        if (logLines is null) return;
-
-        // Use the ScrollableHeight as a proxy for content change
-        if (LogScrollViewer.ScrollableHeight > 0)
+        using var ws = new ClientWebSocket();
+        try
         {
-            // Check AutoScroll state synchronously via the binding
-            var autoScrollToggle = AutoScrollToggle;
-            if (autoScrollToggle?.IsChecked == true)
+            await ws.ConnectAsync(new Uri(wsUrl), ct);
+            var buffer = new byte[4096];
+            var sb = new StringBuilder();
+
+            while (ws.State == WebSocketState.Open && !ct.IsCancellationRequested)
             {
-                LogScrollViewer.ChangeView(null, LogScrollViewer.ScrollableHeight, null);
+                var result = await ws.ReceiveAsync(buffer, ct);
+                if (result.MessageType == WebSocketMessageType.Close) break;
+
+                var msg = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                try
+                {
+                    using var msgDoc = JsonDocument.Parse(msg);
+                    var line = msgDoc.RootElement.GetProperty("line").GetString() ?? "";
+                    var stream = msgDoc.RootElement.GetProperty("stream").GetString() ?? "";
+                    if (stream == "eof") break;
+                    sb.AppendLine(line);
+
+                    // Batch UI updates
+                    if (sb.Length > 500 || result.Count < 100)
+                    {
+                        var batch = sb.ToString();
+                        sb.Clear();
+                        DispatcherQueue.TryEnqueue(() =>
+                        {
+                            LogOutput.Text += batch;
+                            if (AutoScrollToggle.IsOn)
+                                LogScroll.ChangeView(null, LogScroll.ScrollableHeight, null);
+                        });
+                    }
+                }
+                catch { sb.AppendLine(msg); }
             }
-        }
-    }
 
-    private void FindAndBindComboBox()
-    {
-        var comboBox = FindDescendant<ComboBox>(this, "JobSelector");
-        if (comboBox is not null)
-        {
-            comboBox.SelectionChanged += OnJobSelectionChanged;
-        }
-    }
-
-    private async void OnJobSelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        if (sender is ComboBox combo)
-        {
-            var selectedJob = combo.SelectedItem as RunJob;
-            var model = GetModel();
-            if (model is not null)
+            // Flush remaining
+            if (sb.Length > 0)
             {
-                await model.OnJobSelected(selectedJob, CancellationToken.None);
+                var remaining = sb.ToString();
+                DispatcherQueue.TryEnqueue(() => LogOutput.Text += remaining);
             }
 
-            // Scroll to bottom after loading
-            ScrollToBottom();
+            DispatcherQueue.TryEnqueue(() => StatusText.Text = "Stream ended.");
         }
-    }
-
-    private async void OnFieldCheckBoxClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is CheckBox checkBox && checkBox.DataContext is FieldVisibility field)
+        catch (OperationCanceledException) { }
+        catch (Exception ex)
         {
-            var model = GetModel();
-            if (model is not null)
-            {
-                await model.ToggleFieldVisibility(field.Name, CancellationToken.None);
-            }
+            DispatcherQueue.TryEnqueue(() => StatusText.Text = $"WebSocket error: {ex.Message}");
+            // Fallback to HTTP
+            await LoadFullLog(jobId);
         }
     }
 
-    private void ScrollToBottom()
-    {
-        if (LogScrollViewer is not null)
-        {
-            LogScrollViewer.ChangeView(null, LogScrollViewer.ScrollableHeight, null);
-        }
-    }
+    private async void RefreshJobs_Click(object sender, RoutedEventArgs e) => await LoadJobs();
 
-    private LogsModel? GetModel()
+    private class JobItem
     {
-        return DataContext?.GetType().GetProperty("Model")?.GetValue(DataContext) as LogsModel;
-    }
-
-    private static T? FindDescendant<T>(DependencyObject parent, string name) where T : FrameworkElement
-    {
-        var count = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChildrenCount(parent);
-        for (int i = 0; i < count; i++)
-        {
-            var child = Microsoft.UI.Xaml.Media.VisualTreeHelper.GetChild(parent, i);
-            if (child is T typedChild && typedChild.Name == name)
-                return typedChild;
-
-            var result = FindDescendant<T>(child, name);
-            if (result is not null)
-                return result;
-        }
-        return null;
+        public string Id { get; init; } = "";
+        public string Display { get; init; } = "";
+        public string Status { get; init; } = "";
     }
 }

@@ -1,235 +1,166 @@
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Microsoft.UI.Xaml.Controls;
-using Uno.Extensions.Reactive;
 
 namespace FoamPilot.Ui.Presentation;
 
 public sealed partial class DictEditorPage : Page
 {
+    private readonly HttpClient _http;
+    private string? _currentCase;
+    private string? _currentFilePath;
+    private string? _originalContent;
+
     public DictEditorPage()
     {
         this.InitializeComponent();
-        this.DataContextChanged += OnDataContextChanged;
+
+        var config = App.Services?.GetService<IOptions<AppConfig>>()?.Value ?? new AppConfig();
+        _http = new HttpClient { BaseAddress = new Uri(config.BackendUrl) };
+
+        this.Loaded += async (_, _) => await LoadCases();
     }
 
-    private DictEditorModel? Model =>
-        DataContext?.GetType().GetProperty("Model")?.GetValue(DataContext) as DictEditorModel;
-
-    private bool _suppressTextChanged;
-
-    private void OnDataContextChanged(FrameworkElement sender, DataContextChangedEventArgs args)
+    private async Task LoadCases()
     {
-        if (Model is null) return;
-
-        State.ForEachAsync(Model.FileContent, OnFileContentChanged);
-        State.ForEachAsync(Model.IsDirty, OnIsDirtyChanged);
-        State.ForEachAsync(Model.ValidationWarning, OnValidationWarningChanged);
-        State.ForEachAsync(Model.SelectedFile, OnSelectedFileStateChanged);
-        State.ForEachAsync(Model.FileTreeNodes, OnFileTreeChanged);
-    }
-
-    // ── State subscribers ─────────────────────────────────────────────
-
-    private async ValueTask OnFileContentChanged(string? content, CancellationToken ct)
-    {
-        DispatcherQueue.TryEnqueue(() =>
+        try
         {
-            _suppressTextChanged = true;
-            EditorTextBox.Text = content ?? string.Empty;
-            // Enable editor when a file is loaded (content is non-null)
-            EditorTextBox.IsEnabled = content is not null;
-            _suppressTextChanged = false;
-        });
+            var resp = await _http.GetAsync("/cases");
+            if (!resp.IsSuccessStatusCode) return;
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+            var names = doc.RootElement.EnumerateArray()
+                .Select(c => c.GetProperty("name").GetString() ?? "").ToList();
+            CaseCombo.ItemsSource = names;
+            if (names.Count > 0) CaseCombo.SelectedIndex = 0;
+        }
+        catch { }
     }
 
-    private async ValueTask OnIsDirtyChanged(bool isDirty, CancellationToken ct)
+    private async void CaseCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        DispatcherQueue.TryEnqueue(() =>
-        {
-            SaveButton.IsEnabled = isDirty;
-            RevertButton.IsEnabled = isDirty;
-        });
+        _currentCase = CaseCombo.SelectedItem as string;
+        if (string.IsNullOrEmpty(_currentCase)) return;
+        await LoadFileTree();
     }
 
-    private async ValueTask OnValidationWarningChanged(string? warning, CancellationToken ct)
+    private async Task LoadFileTree()
     {
-        DispatcherQueue.TryEnqueue(() =>
+        FileTree.RootNodes.Clear();
+        if (string.IsNullOrEmpty(_currentCase)) return;
+
+        try
         {
-            if (!string.IsNullOrEmpty(warning))
+            var resp = await _http.GetAsync($"/cases/{_currentCase}/files");
+            if (!resp.IsSuccessStatusCode) return;
+            using var doc = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+            BuildTree(doc.RootElement, FileTree.RootNodes);
+        }
+        catch { }
+    }
+
+    private void BuildTree(JsonElement node, IList<TreeViewNode> nodes)
+    {
+        if (node.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var child in node.EnumerateArray())
+                BuildTree(child, nodes);
+            return;
+        }
+
+        var name = node.GetProperty("name").GetString() ?? "";
+        var type = node.GetProperty("type").GetString() ?? "file";
+        var path = node.TryGetProperty("path", out var p) ? p.GetString() ?? name : name;
+
+        var treeNode = new TreeViewNode
+        {
+            Content = name,
+            IsExpanded = type == "directory",
+        };
+        // Store path in Tag-like fashion via a wrapper
+        treeNode.Content = new FileTreeItem { Name = name, Path = path, IsDir = type == "directory" };
+
+        if (type == "directory" && node.TryGetProperty("children", out var children))
+        {
+            foreach (var child in children.EnumerateArray())
+                BuildTree(child, treeNode.Children);
+        }
+
+        nodes.Add(treeNode);
+    }
+
+    private async void FileTree_ItemInvoked(TreeView sender, TreeViewItemInvokedEventArgs args)
+    {
+        if (args.InvokedItem is not TreeViewNode node) return;
+        if (node.Content is not FileTreeItem item || item.IsDir) return;
+
+        await LoadFile(item.Path);
+    }
+
+    private async Task LoadFile(string filePath)
+    {
+        if (string.IsNullOrEmpty(_currentCase)) return;
+
+        try
+        {
+            var encodedPath = Uri.EscapeDataString(filePath);
+            var resp = await _http.GetAsync($"/cases/{_currentCase}/file?path={encodedPath}");
+            if (!resp.IsSuccessStatusCode)
             {
-                ValidationInfoBar.Message = warning;
-                ValidationInfoBar.IsOpen = true;
-            }
-            else
-            {
-                ValidationInfoBar.IsOpen = false;
-            }
-        });
-    }
-
-    private async ValueTask OnSelectedFileStateChanged(FileNode? file, CancellationToken ct)
-    {
-        DispatcherQueue.TryEnqueue(() =>
-        {
-            BreadcrumbText.Text = file?.Path ?? string.Empty;
-        });
-    }
-
-    private async ValueTask OnFileTreeChanged(IImmutableList<FileNode>? nodes, CancellationToken ct)
-    {
-        DispatcherQueue.TryEnqueue(() =>
-        {
-            FileTreeView.RootNodes.Clear();
-
-            if (nodes is null || nodes.Count == 0)
-            {
-                FileTreeView.Visibility = Visibility.Collapsed;
-                TreePlaceholderText.Visibility = Visibility.Visible;
-                TreeProgressRing.IsActive = false;
+                EditorStatus.Text = $"Failed to load: {resp.StatusCode}";
                 return;
             }
 
-            foreach (var node in nodes)
-            {
-                FileTreeView.RootNodes.Add(BuildTreeViewNode(node));
-            }
-
-            FileTreeView.Visibility = Visibility.Visible;
-            TreePlaceholderText.Visibility = Visibility.Collapsed;
-            TreeProgressRing.IsActive = false;
-        });
-    }
-
-    private static TreeViewNode BuildTreeViewNode(FileNode fileNode)
-    {
-        var tvNode = new TreeViewNode
-        {
-            Content = fileNode,
-            IsExpanded = fileNode.Type == "dir"
-        };
-
-        if (fileNode.Children is not null)
-        {
-            foreach (var child in fileNode.Children)
-            {
-                tvNode.Children.Add(BuildTreeViewNode(child));
-            }
+            var content = await resp.Content.ReadAsStringAsync();
+            _currentFilePath = filePath;
+            _originalContent = content;
+            Editor.Text = content;
+            FilePathText.Text = filePath;
+            EditorStatus.Text = "";
         }
-
-        return tvNode;
+        catch (Exception ex) { EditorStatus.Text = $"Error: {ex.Message}"; }
     }
 
-    // ── Event handlers ────────────────────────────────────────────────
-
-    private void CaseComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    private async void Save_Click(object sender, RoutedEventArgs e)
     {
-        if (sender is ComboBox combo && combo.SelectedItem is FoamCase selected)
-        {
-            _ = HandleCaseChangeAsync(selected);
-        }
-    }
+        if (string.IsNullOrEmpty(_currentCase) || string.IsNullOrEmpty(_currentFilePath)) return;
 
-    private async Task HandleCaseChangeAsync(FoamCase selected)
-    {
-        if (Model is null) return;
-
-        if (!await ConfirmDiscardIfDirtyAsync()) return;
-
-        // Clear current file selection and editor
-        await Model.SelectedFile.UpdateAsync(_ => null!, CancellationToken.None);
-        await Model.FileContent.UpdateAsync(_ => null!, CancellationToken.None);
-        await Model.OriginalContent.UpdateAsync(_ => null!, CancellationToken.None);
-        await Model.IsDirty.UpdateAsync(_ => false, CancellationToken.None);
-        await Model.ValidationWarning.UpdateAsync(_ => string.Empty, CancellationToken.None);
-
-        // Show loading state
-        DispatcherQueue.TryEnqueue(() =>
-        {
-            FileTreeView.RootNodes.Clear();
-            FileTreeView.Visibility = Visibility.Collapsed;
-            TreePlaceholderText.Visibility = Visibility.Collapsed;
-            TreeProgressRing.IsActive = true;
-            EditorTextBox.IsEnabled = false;
-        });
-
-        // Setting SelectedCase triggers OnSelectedCaseChanged → FileTreeNodes update → OnFileTreeChanged
-        await Model.SelectedCase.UpdateAsync(_ => selected, CancellationToken.None);
-    }
-
-    private async void FileTreeView_ItemInvoked(TreeView sender, TreeViewItemInvokedEventArgs args)
-    {
-        if (args.InvokedItem is not TreeViewNode tvNode) return;
-        if (tvNode.Content is not FileNode node) return;
-        if (node.Type != "file") return;
-        if (Model is null) return;
-
-        if (!await ConfirmDiscardIfDirtyAsync()) return;
-
-        await Model.SelectedFile.UpdateAsync(_ => node, CancellationToken.None);
-    }
-
-    private void EditorTextBox_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        if (_suppressTextChanged || Model is null) return;
-        Model.FileContent.UpdateAsync(_ => EditorTextBox.Text, CancellationToken.None);
-    }
-
-    private async void SaveButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (Model is null) return;
-        await Model.SaveFile(CancellationToken.None);
-    }
-
-    private async void RevertButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (Model is null) return;
-        await Model.RevertFile(CancellationToken.None);
-    }
-
-    // ── Unsaved changes dialog ────────────────────────────────────────
-
-    /// <summary>
-    /// Returns true if it's safe to proceed (not dirty, or user chose to discard).
-    /// Returns false if the user cancelled.
-    /// </summary>
-    private async Task<bool> ConfirmDiscardIfDirtyAsync()
-    {
-        if (Model is null) return true;
-
-        var isDirty = await Model.IsDirty;
-        if (!isDirty) return true;
-
-        var dialog = new ContentDialog
-        {
-            Title = "Unsaved Changes",
-            Content = "You have unsaved changes. Do you want to save them before switching?",
-            PrimaryButtonText = "Save",
-            SecondaryButtonText = "Discard",
-            CloseButtonText = "Cancel",
-            DefaultButton = ContentDialogButton.Primary,
-            XamlRoot = this.XamlRoot
-        };
-
-        var result = await dialog.ShowAsync();
-
-        return result switch
-        {
-            ContentDialogResult.Primary => await SaveAndContinueAsync(),
-            ContentDialogResult.Secondary => true, // discard
-            _ => false // cancel
-        };
-    }
-
-    private async Task<bool> SaveAndContinueAsync()
-    {
-        if (Model is null) return false;
         try
         {
-            await Model.SaveFile(CancellationToken.None);
-            return true;
+            var encodedPath = Uri.EscapeDataString(_currentFilePath);
+            // Normalize \r (WinUI TextBox) to \n for OpenFOAM
+            var normalized = Editor.Text.Replace("\r\n", "\n").Replace("\r", "\n");
+            var content = new StringContent(normalized, Encoding.UTF8, "text/plain");
+            var resp = await _http.PutAsync($"/cases/{_currentCase}/file?path={encodedPath}", content);
+            if (resp.IsSuccessStatusCode)
+            {
+                _originalContent = Editor.Text;
+                EditorStatus.Text = "Saved.";
+            }
+            else
+            {
+                EditorStatus.Text = $"Save failed: {resp.StatusCode}";
+            }
         }
-        catch
+        catch (Exception ex) { EditorStatus.Text = $"Error: {ex.Message}"; }
+    }
+
+    private void Revert_Click(object sender, RoutedEventArgs e)
+    {
+        if (_originalContent is not null)
         {
-            return false;
+            Editor.Text = _originalContent;
+            EditorStatus.Text = "Reverted.";
         }
+    }
+
+    private class FileTreeItem
+    {
+        public string Name { get; init; } = "";
+        public string Path { get; init; } = "";
+        public bool IsDir { get; init; }
+        public override string ToString() => Name;
     }
 }
