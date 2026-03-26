@@ -88,9 +88,19 @@ public sealed class OpenFoamApiClient : IOpenFoamApiClient
 
     public async Task<string> GetSolverAsync(string caseName, CancellationToken ct)
     {
-        // Phase 6 — placeholder: read controlDict from files endpoint
-        return "unknown";
+        try
+        {
+            var dto = await _http.GetFromJsonAsync<SolverResponse>(
+                $"cases/{Uri.EscapeDataString(caseName)}/solver", JsonOptions, ct);
+            return dto?.Solver ?? "unknown";
+        }
+        catch (HttpRequestException)
+        {
+            return "unknown";
+        }
     }
+
+    private sealed record SolverResponse(string Solver);
 
     public async Task<string> GetJobLogAsync(string jobId, CancellationToken ct)
     {

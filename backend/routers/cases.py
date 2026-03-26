@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -100,6 +101,35 @@ async def clone_case(name: str, req: CaseCloneRequest):
 
 
 # ── Delete case ──────────────────────────────────────────────────────
+
+
+# ── Get solver application ───────────────────────────────────────
+
+
+@router.get("/{name}/solver")
+async def get_solver(name: str):
+    """Read the application field from system/controlDict."""
+    case_path = Path(validate_case_path(name))
+    if not case_path.is_dir():
+        raise HTTPException(status_code=404, detail=f"Case '{name}' not found")
+
+    control_dict = case_path / "system" / "controlDict"
+    if not control_dict.is_file():
+        raise HTTPException(status_code=404, detail="controlDict not found")
+
+    try:
+        text = control_dict.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    match = re.search(r"^\s*application\s+(\S+)\s*;", text, re.MULTILINE)
+    if not match:
+        raise HTTPException(status_code=404, detail="application field not found in controlDict")
+
+    return {"solver": match.group(1)}
+
+
+# ── Delete case ──────────────────────────────────────────────────
 
 
 @router.delete("/{name}", status_code=204)
