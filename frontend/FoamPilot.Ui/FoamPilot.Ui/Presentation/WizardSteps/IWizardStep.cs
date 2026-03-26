@@ -102,7 +102,13 @@ public abstract class WizardStepBase : IWizardStep
                 DefaultBackgroundColor = Microsoft.UI.ColorHelper.FromArgb(255, 30, 30, 30),
             };
             System.Diagnostics.Debug.WriteLine("[FoamPilot] Creating WebView2 for Monaco editor...");
-            await webView.EnsureCoreWebView2Async();
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var initTask = webView.EnsureCoreWebView2Async().AsTask();
+            var completed = await Task.WhenAny(initTask, Task.Delay(5000, cts.Token));
+            if (completed != initTask)
+                throw new TimeoutException("WebView2 initialization timed out after 5s");
+            await initTask; // propagate any exception
+            cts.Cancel();
             System.Diagnostics.Debug.WriteLine("[FoamPilot] WebView2 initialized successfully.");
 
             var editorDir = System.IO.Path.Combine(
