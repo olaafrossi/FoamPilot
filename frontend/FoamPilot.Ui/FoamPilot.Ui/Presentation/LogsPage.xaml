@@ -61,7 +61,8 @@
           Style="{ThemeResource CaptionTextBlockStyle}"
           Opacity="0.7" />
 
-      <ToggleButton Grid.Column="2"
+      <ToggleButton x:Name="AutoScrollToggle"
+          Grid.Column="2"
           Content="Auto-scroll"
           IsChecked="{Binding AutoScroll, Mode=TwoWay}" />
     </Grid>
@@ -81,7 +82,8 @@
         <ItemsRepeater.ItemTemplate>
           <DataTemplate>
             <CheckBox Content="{Binding Name}"
-                IsChecked="{Binding IsVisible, Mode=OneWay}" />
+                IsChecked="{Binding IsVisible, Mode=OneWay}"
+                Click="OnFieldCheckBoxClick" />
           </DataTemplate>
         </ItemsRepeater.ItemTemplate>
       </ItemsRepeater>

@@ -4,6 +4,8 @@ namespace FoamPilot.Ui.Presentation;
 
 public sealed partial class LogsPage : Page
 {
+    private long _lastLogCount;
+
     public LogsPage()
     {
         this.InitializeComponent();
@@ -25,6 +27,32 @@ public sealed partial class LogsPage : Page
 
         // Find the ComboBox inside the FeedView after it renders
         FindAndBindComboBox();
+
+        // Start auto-scroll polling via DispatcherTimer
+        var scrollTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(250) };
+        scrollTimer.Tick += OnScrollTimerTick;
+        scrollTimer.Start();
+    }
+
+    private void OnScrollTimerTick(object? sender, object e)
+    {
+        var model = GetModel();
+        if (model is null) return;
+
+        // Check if auto-scroll is enabled and log has new content
+        var logLines = model.LogLines;
+        if (logLines is null) return;
+
+        // Use the ScrollableHeight as a proxy for content change
+        if (LogScrollViewer.ScrollableHeight > 0)
+        {
+            // Check AutoScroll state synchronously via the binding
+            var autoScrollToggle = AutoScrollToggle;
+            if (autoScrollToggle?.IsChecked == true)
+            {
+                LogScrollViewer.ChangeView(null, LogScrollViewer.ScrollableHeight, null);
+            }
+        }
     }
 
     private void FindAndBindComboBox()
@@ -41,7 +69,7 @@ public sealed partial class LogsPage : Page
         if (sender is ComboBox combo)
         {
             var selectedJob = combo.SelectedItem as RunJob;
-            var model = DataContext?.GetType().GetProperty("Model")?.GetValue(DataContext) as LogsModel;
+            var model = GetModel();
             if (model is not null)
             {
                 await model.OnJobSelected(selectedJob, CancellationToken.None);
@@ -52,12 +80,29 @@ public sealed partial class LogsPage : Page
         }
     }
 
+    private async void OnFieldCheckBoxClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is CheckBox checkBox && checkBox.DataContext is FieldVisibility field)
+        {
+            var model = GetModel();
+            if (model is not null)
+            {
+                await model.ToggleFieldVisibility(field.Name, CancellationToken.None);
+            }
+        }
+    }
+
     private void ScrollToBottom()
     {
         if (LogScrollViewer is not null)
         {
             LogScrollViewer.ChangeView(null, LogScrollViewer.ScrollableHeight, null);
         }
+    }
+
+    private LogsModel? GetModel()
+    {
+        return DataContext?.GetType().GetProperty("Model")?.GetValue(DataContext) as LogsModel;
     }
 
     private static T? FindDescendant<T>(DependencyObject parent, string name) where T : FrameworkElement
