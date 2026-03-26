@@ -17,4 +17,5 @@ public interface IOpenFoamApiClient
     Task<IImmutableList<FileNode>> GetFileTreeAsync(string caseName, CancellationToken ct);
     Task<string> GetFileContentAsync(string caseName, string filePath, CancellationToken ct);
     Task SaveFileContentAsync(string caseName, string filePath, string content, CancellationToken ct);
+    Task<string> EnsureFoamFileAsync(string caseName, CancellationToken ct);
 }

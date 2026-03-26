@@ -101,6 +101,10 @@
                           Command="{Binding DataContext.OpenFolder, ElementName=CaseBrowserRoot}"
                           CommandParameter="{Binding}"
                           Padding="8,4" />
+                      <Button Content="ParaView"
+                          Command="{Binding DataContext.OpenInParaView, ElementName=CaseBrowserRoot}"
+                          CommandParameter="{Binding}"
+                          Padding="8,4" />
                     </StackPanel>
 
                   </StackPanel>

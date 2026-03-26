@@ -7,8 +7,33 @@
     xmlns:uen="using:Uno.Extensions.Navigation.UI"
     xmlns:uer="using:Uno.Extensions.Reactive.UI">
 
+  <UserControl.Resources>
+    <local:ContainerStatusToColorConverter x:Key="StatusColorConverter" />
+    <local:BoolToVisibilityConverter x:Key="InvertedBoolToVisibility" Invert="True" />
+  </UserControl.Resources>
+
   <Grid Background="{ThemeResource BackgroundBrush}">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+
+    <!-- Backend disconnected InfoBar -->
+    <uer:FeedView Source="{Binding IsBackendConnected}" Grid.Row="0">
+      <uer:FeedView.ValueTemplate>
+        <DataTemplate>
+          <muxc:InfoBar
+              IsOpen="{Binding Converter={StaticResource InvertedBoolToVisibility}}"
+              Severity="Warning"
+              Title="Backend not reachable"
+              Message="Start container from Settings."
+              IsClosable="False" />
+        </DataTemplate>
+      </uer:FeedView.ValueTemplate>
+    </uer:FeedView>
+
     <muxc:NavigationView x:Name="NavView"
+        Grid.Row="1"
         IsBackButtonVisible="Collapsed"
         IsPaneToggleButtonVisible="True"
         IsSettingsVisible="False"

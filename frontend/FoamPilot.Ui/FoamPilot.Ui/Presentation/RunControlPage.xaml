@@ -77,6 +77,11 @@
 
       <Button Content="reconstructPar"
           Command="{Binding RunReconstructPar}" />
+
+      <AppBarSeparator />
+
+      <Button Content="Open in ParaView"
+          Command="{Binding OpenInParaView}" />
     </StackPanel>
 
     <!-- Row 2: Custom command -->

@@ -139,3 +139,23 @@ async def delete_case(name: str):
     if not os.path.isdir(case_path):
         raise HTTPException(status_code=404, detail=f"Case '{name}' not found")
     shutil.rmtree(case_path)
+
+
+# ── Ensure .foam file for ParaView ──────────────────────────────
+
+
+@router.post("/{name}/ensure-foam")
+async def ensure_foam_file(name: str):
+    """Create an empty .foam file in the case directory if missing.
+
+    ParaView uses this file as an entry point to open OpenFOAM cases.
+    """
+    case_path = Path(validate_case_path(name))
+    if not case_path.is_dir():
+        raise HTTPException(status_code=404, detail=f"Case '{name}' not found")
+
+    foam_file = case_path / f"{name}.foam"
+    if not foam_file.exists():
+        foam_file.touch()
+
+    return {"path": str(foam_file)}

@@ -6,10 +6,12 @@ namespace FoamPilot.Ui.Presentation;
 public partial record CaseBrowserModel
 {
     private readonly IOpenFoamApiClient _api;
+    private readonly IParaViewService _paraView;
 
-    public CaseBrowserModel(IOpenFoamApiClient api)
+    public CaseBrowserModel(IOpenFoamApiClient api, IParaViewService paraView)
     {
         _api = api;
+        _paraView = paraView;
     }
 
     public IListState<FoamCase> Cases => ListState.Async(this, async ct =>
@@ -82,5 +84,10 @@ public partial record CaseBrowserModel
         }
 
         return ValueTask.CompletedTask;
+    }
+
+    public async ValueTask OpenInParaView(FoamCase target, CancellationToken ct)
+    {
+        await _paraView.LaunchAsync(target.Name, _api, ct);
     }
 }

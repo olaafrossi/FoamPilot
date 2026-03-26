@@ -6,10 +6,12 @@ namespace FoamPilot.Ui.Presentation;
 public partial record RunControlModel
 {
     private readonly IOpenFoamApiClient _api;
+    private readonly IParaViewService _paraView;
 
-    public RunControlModel(IOpenFoamApiClient api)
+    public RunControlModel(IOpenFoamApiClient api, IParaViewService paraView)
     {
         _api = api;
+        _paraView = paraView;
     }
 
     // ── Feeds & States ───────────────────────────────────────────────
@@ -91,6 +93,14 @@ public partial record RunControlModel
 
     public async ValueTask CancelJob(RunJob job, CancellationToken ct) =>
         await _api.CancelJobAsync(job.Id, ct);
+
+    public async ValueTask OpenInParaView(CancellationToken ct)
+    {
+        var selectedCase = await SelectedCase;
+        if (selectedCase is null)
+            return;
+        await _paraView.LaunchAsync(selectedCase.Name, _api, ct);
+    }
 
     // ── Helpers ──────────────────────────────────────────────────────
 

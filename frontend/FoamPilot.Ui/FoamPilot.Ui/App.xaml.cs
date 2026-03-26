@@ -54,6 +54,9 @@ public partial class App : Application
                     // ── Docker Compose manager ──
                     services.AddSingleton<IDockerManager>(sp =>
                         new DockerManager(() => "./docker"));
+
+                    // ── ParaView service ──
+                    services.AddSingleton<IParaViewService, ParaViewService>();
                 })
                 .UseNavigation(ReactiveViewModelMappings.ViewModelMappings, RegisterRoutes)
             );
@@ -66,6 +69,27 @@ public partial class App : Application
         MainWindow.SetWindowIcon();
 
         Host = await builder.NavigateAsync<Shell>();
+
+        // Auto-start container if enabled
+        if (Host is not null)
+        {
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var paraViewService = Host.Services.GetService<IParaViewService>();
+                    if (paraViewService?.AutoStartContainer == true)
+                    {
+                        var docker = Host.Services.GetRequiredService<IDockerManager>();
+                        await docker.StartAsync(CancellationToken.None);
+                    }
+                }
+                catch
+                {
+                    // Swallow auto-start failures silently
+                }
+            });
+        }
     }
 
     private static void RegisterRoutes(IViewRegistry views, IRouteRegistry routes)
