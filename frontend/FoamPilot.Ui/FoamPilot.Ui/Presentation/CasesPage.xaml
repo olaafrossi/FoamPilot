@@ -1,0 +1,55 @@
+<Page x:Class="FoamPilot.Ui.Presentation.CasesPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:uer="using:Uno.Extensions.Reactive.UI"
+    Background="{ThemeResource BackgroundBrush}">
+
+  <Grid Padding="24" RowSpacing="16">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+
+    <TextBlock Text="Cases"
+        Style="{ThemeResource TitleLargeTextBlockStyle}" />
+
+    <uer:FeedView Source="{Binding Cases}" Grid.Row="1">
+      <uer:FeedView.ValueTemplate>
+        <DataTemplate>
+          <ListView ItemsSource="{Binding}">
+            <ListView.ItemTemplate>
+              <DataTemplate>
+                <Grid Padding="8" ColumnSpacing="12">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Text="{Binding Name}"
+                      VerticalAlignment="Center"
+                      Style="{ThemeResource BodyLargeTextBlockStyle}" />
+                  <TextBlock Grid.Column="1"
+                      Text="{Binding LastModified}"
+                      VerticalAlignment="Center"
+                      Style="{ThemeResource CaptionTextBlockStyle}"
+                      Opacity="0.6" />
+                </Grid>
+              </DataTemplate>
+            </ListView.ItemTemplate>
+          </ListView>
+        </DataTemplate>
+      </uer:FeedView.ValueTemplate>
+      <uer:FeedView.ProgressTemplate>
+        <DataTemplate>
+          <ProgressRing IsActive="True" HorizontalAlignment="Center" VerticalAlignment="Center" />
+        </DataTemplate>
+      </uer:FeedView.ProgressTemplate>
+      <uer:FeedView.ErrorTemplate>
+        <DataTemplate>
+          <TextBlock Text="Failed to load cases. Is the backend running?"
+              Foreground="{ThemeResource ErrorColor}"
+              HorizontalAlignment="Center" />
+        </DataTemplate>
+      </uer:FeedView.ErrorTemplate>
+    </uer:FeedView>
+  </Grid>
+</Page>

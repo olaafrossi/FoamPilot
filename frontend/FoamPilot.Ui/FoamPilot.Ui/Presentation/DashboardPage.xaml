@@ -1,0 +1,24 @@
+<Page x:Class="FoamPilot.Ui.Presentation.DashboardPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:uer="using:Uno.Extensions.Reactive.UI"
+    Background="{ThemeResource BackgroundBrush}">
+
+  <Grid Padding="24" RowSpacing="16">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+
+    <TextBlock Text="Dashboard"
+        Style="{ThemeResource TitleLargeTextBlockStyle}" />
+
+    <StackPanel Grid.Row="1" Spacing="12">
+      <TextBlock Text="Welcome to FoamPilot"
+          Style="{ThemeResource BodyLargeTextBlockStyle}" />
+      <TextBlock Text="Select a section from the sidebar to get started."
+          Style="{ThemeResource BodyMediumTextBlockStyle}"
+          Opacity="0.7" />
+    </StackPanel>
+  </Grid>
+</Page>

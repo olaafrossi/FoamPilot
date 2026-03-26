@@ -1,0 +1,33 @@
+<Page x:Class="FoamPilot.Ui.Presentation.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:uer="using:Uno.Extensions.Reactive.UI"
+    Background="{ThemeResource BackgroundBrush}">
+
+  <Grid Padding="24" RowSpacing="16">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+
+    <TextBlock Text="Settings"
+        Style="{ThemeResource TitleLargeTextBlockStyle}" />
+
+    <StackPanel Grid.Row="1" Spacing="16" MaxWidth="480" HorizontalAlignment="Left">
+      <TextBox Header="Backend URL"
+          Text="{Binding BackendUrl, Mode=TwoWay}"
+          PlaceholderText="http://localhost:8000" />
+
+      <TextBox Header="Docker Compose Path"
+          Text="{Binding DockerComposePath, Mode=TwoWay}"
+          PlaceholderText="./docker" />
+
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <Button Content="Start Container"
+            Command="{Binding StartContainer}" />
+        <Button Content="Stop Container"
+            Command="{Binding StopContainer}" />
+      </StackPanel>
+    </StackPanel>
+  </Grid>
+</Page>

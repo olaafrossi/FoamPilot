@@ -32,6 +32,7 @@
       Configuration;
       Navigation;
       ThemeService;
+      Http;
       SkiaRenderer;
     </UnoFeatures>
   </PropertyGroup>
