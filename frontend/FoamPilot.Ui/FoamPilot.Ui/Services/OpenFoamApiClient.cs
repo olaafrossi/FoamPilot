@@ -69,8 +69,9 @@ public sealed class OpenFoamApiClient : IOpenFoamApiClient
 
     public async Task<IImmutableList<RunJob>> GetJobsAsync(CancellationToken ct)
     {
-        // The backend doesn't have a list-all endpoint yet; return empty for now.
-        return ImmutableList<RunJob>.Empty;
+        var dtos = await _http.GetFromJsonAsync<List<JobDto>>("jobs", JsonOptions, ct)
+            ?? [];
+        return dtos.Select(d => d.ToModel()).ToImmutableList();
     }
 
     public async Task<RunJob> GetJobAsync(string jobId, CancellationToken ct)
@@ -90,6 +91,27 @@ public sealed class OpenFoamApiClient : IOpenFoamApiClient
         // Phase 6 — placeholder: read controlDict from files endpoint
         return "unknown";
     }
+
+    public async Task<string> GetJobLogAsync(string jobId, CancellationToken ct)
+    {
+        return await _http.GetStringAsync($"jobs/{Uri.EscapeDataString(jobId)}/log", ct);
+    }
+
+    public async Task<Dictionary<string, List<ResidualPoint>>> GetJobResidualsAsync(string jobId, CancellationToken ct)
+    {
+        var response = await _http.GetFromJsonAsync<ResidualsResponse>(
+            $"jobs/{Uri.EscapeDataString(jobId)}/residuals", JsonOptions, ct);
+        if (response?.Fields is null)
+            return new Dictionary<string, List<ResidualPoint>>();
+
+        return response.Fields.ToDictionary(
+            kvp => kvp.Key,
+            kvp => kvp.Value.Select(r => new ResidualPoint(
+                r.Iteration, kvp.Key, r.Initial, r.Final)).ToList());
+    }
+
+    private sealed record ResidualsResponse(Dictionary<string, List<ResidualEntryDto>>? Fields);
+    private sealed record ResidualEntryDto(int Iteration, double Initial, double Final, int NoIterations);
 
     // ── DTOs for JSON deserialization ────────────────────────────────
 

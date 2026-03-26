@@ -37,4 +37,7 @@
     </UnoFeatures>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="LiveChartsCore.SkiaSharpView.Uno.WinUI" />
+  </ItemGroup>
 </Project>

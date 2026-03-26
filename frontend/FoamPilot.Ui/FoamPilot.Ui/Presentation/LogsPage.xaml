@@ -1,20 +1,124 @@
 <Page x:Class="FoamPilot.Ui.Presentation.LogsPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:uer="using:Uno.Extensions.Reactive.UI"
+    xmlns:lvc="using:LiveChartsCore.SkiaSharpView.WinUI"
     Background="{ThemeResource BackgroundBrush}">
 
-  <Grid Padding="24" RowSpacing="16">
+  <Grid Padding="24" RowSpacing="12">
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
       <RowDefinition Height="*" />
     </Grid.RowDefinitions>
 
-    <TextBlock Text="Logs"
+    <!-- Header -->
+    <TextBlock Text="Log Viewer"
         Style="{ThemeResource TitleLargeTextBlockStyle}" />
 
-    <TextBlock Grid.Row="1"
-        Text="Log viewer — coming soon."
-        Style="{ThemeResource BodyMediumTextBlockStyle}"
-        Opacity="0.7" />
+    <!-- Job selector + auto-scroll + status -->
+    <Grid Grid.Row="1" ColumnSpacing="12">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="Auto" />
+        <ColumnDefinition Width="*" />
+        <ColumnDefinition Width="Auto" />
+      </Grid.ColumnDefinitions>
+
+      <StackPanel Orientation="Horizontal" Spacing="8">
+        <TextBlock Text="Job:"
+            VerticalAlignment="Center"
+            Style="{ThemeResource BodyMediumTextBlockStyle}" />
+
+        <uer:FeedView Source="{Binding Jobs}">
+          <uer:FeedView.ValueTemplate>
+            <DataTemplate>
+              <ComboBox x:Name="JobSelector"
+                  ItemsSource="{Binding}"
+                  DisplayMemberPath="CaseName"
+                  MinWidth="250"
+                  PlaceholderText="Select a job..." />
+            </DataTemplate>
+          </uer:FeedView.ValueTemplate>
+          <uer:FeedView.ProgressTemplate>
+            <DataTemplate>
+              <ProgressRing IsActive="True" Width="24" Height="24" />
+            </DataTemplate>
+          </uer:FeedView.ProgressTemplate>
+          <uer:FeedView.ErrorTemplate>
+            <DataTemplate>
+              <TextBlock Text="Could not load jobs"
+                  Foreground="Red"
+                  Style="{ThemeResource CaptionTextBlockStyle}" />
+            </DataTemplate>
+          </uer:FeedView.ErrorTemplate>
+        </uer:FeedView>
+      </StackPanel>
+
+      <TextBlock Grid.Column="1"
+          Text="{Binding StatusText}"
+          VerticalAlignment="Center"
+          Style="{ThemeResource CaptionTextBlockStyle}"
+          Opacity="0.7" />
+
+      <ToggleButton Grid.Column="2"
+          Content="Auto-scroll"
+          IsChecked="{Binding AutoScroll, Mode=TwoWay}" />
+    </Grid>
+
+    <!-- Row 0: Chart panel -->
+    <Grid Grid.Row="2" RowSpacing="8">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto" />
+        <RowDefinition Height="*" />
+      </Grid.RowDefinitions>
+
+      <!-- Field visibility toggles (legend) -->
+      <ItemsRepeater ItemsSource="{Binding FieldVisibilities}">
+        <ItemsRepeater.Layout>
+          <StackLayout Orientation="Horizontal" Spacing="8" />
+        </ItemsRepeater.Layout>
+        <ItemsRepeater.ItemTemplate>
+          <DataTemplate>
+            <CheckBox Content="{Binding Name}"
+                IsChecked="{Binding IsVisible, Mode=OneWay}" />
+          </DataTemplate>
+        </ItemsRepeater.ItemTemplate>
+      </ItemsRepeater>
+
+      <!-- Residual chart -->
+      <lvc:CartesianChart x:Name="ResidualChart"
+          Grid.Row="1"
+          Series="{Binding ChartSeries}"
+          ZoomMode="X"
+          MinHeight="200">
+        <lvc:CartesianChart.XAxes>
+          <lvc:Axis Name="Iteration" />
+        </lvc:CartesianChart.XAxes>
+      </lvc:CartesianChart>
+    </Grid>
+
+    <!-- Row 1: Log panel -->
+    <Grid Grid.Row="3">
+      <ScrollViewer x:Name="LogScrollViewer"
+          VerticalScrollBarVisibility="Auto"
+          HorizontalScrollBarVisibility="Auto">
+        <ItemsRepeater ItemsSource="{Binding LogLines}">
+          <ItemsRepeater.Layout>
+            <StackLayout Orientation="Vertical" Spacing="0" />
+          </ItemsRepeater.Layout>
+          <ItemsRepeater.ItemTemplate>
+            <DataTemplate>
+              <TextBlock Text="{Binding Text}"
+                  FontFamily="Cascadia Code, Consolas, Courier New, monospace"
+                  FontSize="12"
+                  IsTextSelectionEnabled="True"
+                  TextWrapping="NoWrap"
+                  Padding="4,1" />
+            </DataTemplate>
+          </ItemsRepeater.ItemTemplate>
+        </ItemsRepeater>
+      </ScrollViewer>
+    </Grid>
   </Grid>
 </Page>

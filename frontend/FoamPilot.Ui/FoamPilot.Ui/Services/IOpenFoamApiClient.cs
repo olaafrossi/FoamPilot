@@ -12,4 +12,6 @@ public interface IOpenFoamApiClient
     Task<RunJob> GetJobAsync(string jobId, CancellationToken ct);
     Task CancelJobAsync(string jobId, CancellationToken ct);
     Task<string> GetSolverAsync(string caseName, CancellationToken ct);
+    Task<string> GetJobLogAsync(string jobId, CancellationToken ct);
+    Task<Dictionary<string, List<ResidualPoint>>> GetJobResidualsAsync(string jobId, CancellationToken ct);
 }

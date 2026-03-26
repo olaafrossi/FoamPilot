@@ -5,14 +5,25 @@ from __future__ import annotations
 import os
 
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import PlainTextResponse
 
 from models import JobStatus, JobStatusEnum, RunRequest
 from services.foam_runner import cancel_job, case_dir, get_job, list_jobs, start_job
+from services.log_parser import parse_residuals
 
 router = APIRouter(tags=["runner"])
 
 
 # ── Start a run ──────────────────────────────────────────────────────
+
+
+# ── List all jobs ────────────────────────────────────────────────────
+
+
+@router.get("/jobs", response_model=list[JobStatus])
+async def get_all_jobs():
+    """Return all known jobs (running and finished)."""
+    return [_job_status(j) for j in list_jobs()]
 
 
 @router.post("/run", response_model=JobStatus, status_code=202)
@@ -45,6 +56,32 @@ async def delete_job(job_id: str):
     """Cancel a running job."""
     if not cancel_job(job_id):
         raise HTTPException(status_code=404, detail="Job not found or already finished")
+
+
+# ── Full log (plain text) ────────────────────────────────────────────
+
+
+@router.get("/jobs/{job_id}/log", response_class=PlainTextResponse)
+async def get_job_log(job_id: str):
+    """Return the full log for a job as plain text."""
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    lines = [entry["line"] for entry in job.log]
+    return "\n".join(lines)
+
+
+# ── Parsed residuals ────────────────────────────────────────────────
+
+
+@router.get("/jobs/{job_id}/residuals")
+async def get_job_residuals(job_id: str):
+    """Return parsed residual data grouped by field."""
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    fields = parse_residuals(list(job.log))
+    return {"fields": fields}
 
 
 # ── WebSocket log stream ─────────────────────────────────────────────
