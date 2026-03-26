@@ -91,11 +91,7 @@
           Grid.Row="1"
           Series="{Binding ChartSeries}"
           ZoomMode="X"
-          MinHeight="200">
-        <lvc:CartesianChart.XAxes>
-          <lvc:Axis Name="Iteration" />
-        </lvc:CartesianChart.XAxes>
-      </lvc:CartesianChart>
+          MinHeight="200" />
     </Grid>
 
     <!-- Row 1: Log panel -->

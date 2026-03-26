@@ -1,3 +1,5 @@
+using Uno.Extensions.Reactive;
+
 namespace FoamPilot.Ui.Presentation;
 
 public sealed partial class DictEditorPage : Page
@@ -8,7 +10,8 @@ public sealed partial class DictEditorPage : Page
         this.DataContextChanged += OnDataContextChanged;
     }
 
-    private DictEditorModel? Model => DataContext as DictEditorModel;
+    private DictEditorModel? Model =>
+        DataContext?.GetType().GetProperty("Model")?.GetValue(DataContext) as DictEditorModel;
 
     private bool _suppressTextChanged;
 
@@ -17,10 +20,10 @@ public sealed partial class DictEditorPage : Page
         if (Model is null) return;
 
         // Subscribe to state changes for FileContent, IsDirty, ValidationWarning, SelectedFile
-        Model.FileContent.ForEachAsync(OnFileContentChanged);
-        Model.IsDirty.ForEachAsync(OnIsDirtyChanged);
-        Model.ValidationWarning.ForEachAsync(OnValidationWarningChanged);
-        Model.SelectedFile.ForEachAsync(OnSelectedFileStateChanged);
+        State.ForEachAsync(Model.FileContent, OnFileContentChanged);
+        State.ForEachAsync(Model.IsDirty, OnIsDirtyChanged);
+        State.ForEachAsync(Model.ValidationWarning, OnValidationWarningChanged);
+        State.ForEachAsync(Model.SelectedFile, OnSelectedFileStateChanged);
     }
 
     private async ValueTask OnFileContentChanged(string? content, CancellationToken ct)
@@ -71,7 +74,7 @@ public sealed partial class DictEditorPage : Page
     {
         if (sender is ComboBox combo && combo.SelectedItem is FoamCase selected)
         {
-            Model?.SelectedCase.SetAsync(selected, CancellationToken.None);
+            Model?.SelectedCase.UpdateAsync(_ => selected, CancellationToken.None);
         }
     }
 
@@ -80,14 +83,14 @@ public sealed partial class DictEditorPage : Page
     {
         if (args.InvokedItem is FileNode node && node.Type == "file")
         {
-            Model?.SelectedFile.SetAsync(node, CancellationToken.None);
+            Model?.SelectedFile.UpdateAsync(_ => node, CancellationToken.None);
         }
     }
 
     private void EditorTextBox_TextChanged(object sender, TextChangedEventArgs e)
     {
         if (_suppressTextChanged || Model is null) return;
-        Model.FileContent.SetAsync(EditorTextBox.Text, CancellationToken.None);
+        Model.FileContent.UpdateAsync(_ => EditorTextBox.Text, CancellationToken.None);
     }
 
     private async void SaveButton_Click(object sender, RoutedEventArgs e)

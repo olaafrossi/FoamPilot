@@ -144,6 +144,28 @@ public sealed class OpenFoamApiClient : IOpenFoamApiClient
             ExitCode);
     }
 
+    public async Task<IImmutableList<FileNode>> GetFileTreeAsync(string caseName, CancellationToken ct)
+    {
+        var dtos = await _http.GetFromJsonAsync<List<FileNodeDto>>(
+            $"cases/{Uri.EscapeDataString(caseName)}/files", JsonOptions, ct) ?? [];
+        return dtos.Select(d => d.ToModel()).ToImmutableList();
+    }
+
+    public async Task<string> GetFileContentAsync(string caseName, string filePath, CancellationToken ct)
+    {
+        var dto = await _http.GetFromJsonAsync<FileContentDto>(
+            $"cases/{Uri.EscapeDataString(caseName)}/files/{Uri.EscapeDataString(filePath)}", JsonOptions, ct);
+        return dto?.Content ?? string.Empty;
+    }
+
+    public async Task SaveFileContentAsync(string caseName, string filePath, string content, CancellationToken ct)
+    {
+        var payload = new { content };
+        var response = await _http.PutAsJsonAsync(
+            $"cases/{Uri.EscapeDataString(caseName)}/files/{Uri.EscapeDataString(filePath)}", payload, JsonOptions, ct);
+        response.EnsureSuccessStatusCode();
+    }
+
     private sealed record FileNodeDto(
         string Name,
         string Path,

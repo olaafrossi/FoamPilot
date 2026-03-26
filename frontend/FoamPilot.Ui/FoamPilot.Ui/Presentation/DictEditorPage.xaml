@@ -65,15 +65,9 @@
                   ItemsSource="{Binding}"
                   ItemInvoked="FileTreeView_ItemInvoked">
                 <muxc:TreeView.ItemTemplate>
-                  <muxc:TreeViewItemTemplateSelector>
-                    <muxc:TreeViewItemTemplateSelector.ItemTemplate>
-                      <DataTemplate x:DataType="local:FileNode">
-                        <muxc:TreeViewItem ItemsSource="{Binding Children}"
-                            Content="{Binding Name}"
-                            IsExpanded="True" />
-                      </DataTemplate>
-                    </muxc:TreeViewItemTemplateSelector.ItemTemplate>
-                  </muxc:TreeViewItemTemplateSelector>
+                  <DataTemplate x:DataType="local:FileNode">
+                    <TextBlock Text="{Binding Name}" />
+                  </DataTemplate>
                 </muxc:TreeView.ItemTemplate>
               </muxc:TreeView>
             </DataTemplate>

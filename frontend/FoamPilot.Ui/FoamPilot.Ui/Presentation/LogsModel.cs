@@ -240,11 +240,11 @@ public partial record LogsModel
 
     private async Task UpdateFieldVisibilities(CancellationToken ct)
     {
-        var residuals = await Residuals.GetAsync(ct);
+        var residuals = await Residuals;
         if (residuals is null) return;
 
         var fieldNames = residuals.Select(r => r.Field).Distinct().ToList();
-        var currentVisibilities = await FieldVisibilities.GetAsync(ct)
+        var currentVisibilities = (await FieldVisibilities)
             ?? ImmutableList<FieldVisibility>.Empty;
 
         var updated = fieldNames.Select(name =>
@@ -258,8 +258,8 @@ public partial record LogsModel
 
     private async Task RebuildChartSeries(CancellationToken ct)
     {
-        var residuals = await Residuals.GetAsync(ct);
-        var visibilities = await FieldVisibilities.GetAsync(ct);
+        var residuals = await Residuals;
+        var visibilities = await FieldVisibilities;
         if (residuals is null || visibilities is null)
         {
             await ChartSeries.UpdateAsync(_ => ImmutableList<ISeries>.Empty, ct);

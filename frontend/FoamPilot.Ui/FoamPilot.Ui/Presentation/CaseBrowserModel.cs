@@ -12,7 +12,7 @@ public partial record CaseBrowserModel
         _api = api;
     }
 
-    public IListFeed<FoamCase> Cases => ListFeed.Async(async ct =>
+    public IListState<FoamCase> Cases => ListState.Async(this, async ct =>
         await _api.GetCasesAsync(ct));
 
     public IState<FoamCase> SelectedCase => State<FoamCase>.Empty(this);
@@ -39,21 +39,24 @@ public partial record CaseBrowserModel
         // Clear inputs
         await NewCaseName.UpdateAsync(_ => string.Empty, ct);
 
-        // Refresh cases feed by forcing a new async enumeration
-        await Cases.RefreshAsync(ct);
+        // Refresh cases list
+        var freshCases = await _api.GetCasesAsync(ct);
+        await Cases.UpdateAsync(_ => freshCases, ct);
     }
 
     public async ValueTask CloneCase(FoamCase source, CancellationToken ct)
     {
         var newName = $"{source.Name}_copy";
         await _api.CloneCaseAsync(source.Name, newName, ct);
-        await Cases.RefreshAsync(ct);
+        var freshCases = await _api.GetCasesAsync(ct);
+        await Cases.UpdateAsync(_ => freshCases, ct);
     }
 
     public async ValueTask DeleteCase(FoamCase target, CancellationToken ct)
     {
         await _api.DeleteCaseAsync(target.Name, ct);
-        await Cases.RefreshAsync(ct);
+        var freshCases = await _api.GetCasesAsync(ct);
+        await Cases.UpdateAsync(_ => freshCases, ct);
     }
 
     public ValueTask OpenFolder(FoamCase target)

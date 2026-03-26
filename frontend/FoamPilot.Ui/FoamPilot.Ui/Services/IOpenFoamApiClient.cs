@@ -14,4 +14,7 @@ public interface IOpenFoamApiClient
     Task<string> GetSolverAsync(string caseName, CancellationToken ct);
     Task<string> GetJobLogAsync(string jobId, CancellationToken ct);
     Task<Dictionary<string, List<ResidualPoint>>> GetJobResidualsAsync(string jobId, CancellationToken ct);
+    Task<IImmutableList<FileNode>> GetFileTreeAsync(string caseName, CancellationToken ct);
+    Task<string> GetFileContentAsync(string caseName, string filePath, CancellationToken ct);
+    Task SaveFileContentAsync(string caseName, string filePath, string content, CancellationToken ct);
 }

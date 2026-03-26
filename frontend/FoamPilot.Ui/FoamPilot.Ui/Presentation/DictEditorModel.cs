@@ -1,4 +1,5 @@
 using FoamPilot.Ui.Services;
+using Uno.Extensions.Reactive;
 
 namespace FoamPilot.Ui.Presentation;
 
@@ -10,7 +11,12 @@ public partial record DictEditorModel
     {
         _api = api;
 
-        SelectedFile.ForEachAsync(OnSelectedFileChanged);
+        State.ForEachAsync(SelectedFile, OnSelectedFileChanged);
+        State.ForEachAsync(FileContent, async (content, ct) =>
+        {
+            var original = await OriginalContent;
+            await IsDirty.UpdateAsync(_ => !string.Equals(content, original, StringComparison.Ordinal), ct);
+        });
     }
 
     // ── Feeds & States ───────────────────────────────────────────────
@@ -33,9 +39,7 @@ public partial record DictEditorModel
 
     public IState<string> OriginalContent => State<string>.Empty(this);
 
-    public IFeed<bool> IsDirty => FileContent
-        .CombineAsync(OriginalContent, (current, original) =>
-            !string.Equals(current, original, StringComparison.Ordinal));
+    public IState<bool> IsDirty => State<bool>.Value(this, () => false);
 
     public IState<string> ValidationWarning => State<string>.Empty(this);
 
@@ -49,9 +53,9 @@ public partial record DictEditorModel
         if (selectedCase is null) return;
 
         var content = await _api.GetFileContentAsync(selectedCase.Name, file.Path, ct);
-        await OriginalContent.SetAsync(content, ct);
-        await FileContent.SetAsync(content, ct);
-        await ValidationWarning.SetAsync(string.Empty, ct);
+        await OriginalContent.UpdateAsync(_ => content, ct);
+        await FileContent.UpdateAsync(_ => content, ct);
+        await ValidationWarning.UpdateAsync(_ => string.Empty, ct);
     }
 
     // ── Commands ─────────────────────────────────────────────────────
@@ -66,17 +70,17 @@ public partial record DictEditorModel
 
         // Brace validation - warn but allow save
         var warning = ValidateBraces(content);
-        await ValidationWarning.SetAsync(warning, ct);
+        await ValidationWarning.UpdateAsync(_ => warning, ct);
 
         await _api.SaveFileContentAsync(selectedCase.Name, selectedFile.Path, content, ct);
-        await OriginalContent.SetAsync(content, ct);
+        await OriginalContent.UpdateAsync(_ => content, ct);
     }
 
     public async ValueTask RevertFile(CancellationToken ct)
     {
         var original = await OriginalContent ?? string.Empty;
-        await FileContent.SetAsync(original, ct);
-        await ValidationWarning.SetAsync(string.Empty, ct);
+        await FileContent.UpdateAsync(_ => original, ct);
+        await ValidationWarning.UpdateAsync(_ => string.Empty, ct);
     }
 
     // ── Brace validation ─────────────────────────────────────────────

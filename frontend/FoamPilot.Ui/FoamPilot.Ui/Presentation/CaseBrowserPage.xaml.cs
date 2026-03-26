@@ -13,7 +13,8 @@ public sealed partial class CaseBrowserPage : Page
 
         if (result == ContentDialogResult.Primary)
         {
-            var vm = (BindableCaseBrowserModel)DataContext;
+            // Access the CreateCase command via the source-generated bindable model
+            dynamic vm = DataContext;
             await vm.CreateCase(CancellationToken.None);
         }
     }

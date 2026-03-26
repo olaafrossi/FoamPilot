@@ -12,12 +12,12 @@ public sealed partial class LogsPage : Page
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        // Configure logarithmic Y axis for residuals
-        ResidualChart.YAxes = new[]
+        // Configure axes for residuals chart
+        ResidualChart.XAxes = new Axis[] { new() { Name = "Iteration" } };
+        ResidualChart.YAxes = new Axis[]
         {
-            new LogaritmicAxis
+            new LogaritmicAxis(10)
             {
-                Base = 10,
                 Labeler = value => Math.Pow(10, value).ToString("E1"),
                 MinLimit = Math.Log10(1e-10),
             }
@@ -38,10 +38,14 @@ public sealed partial class LogsPage : Page
 
     private async void OnJobSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (sender is ComboBox combo && DataContext is BindableLogsModel model)
+        if (sender is ComboBox combo)
         {
             var selectedJob = combo.SelectedItem as RunJob;
-            await model.Model.OnJobSelected(selectedJob, CancellationToken.None);
+            var model = DataContext?.GetType().GetProperty("Model")?.GetValue(DataContext) as LogsModel;
+            if (model is not null)
+            {
+                await model.OnJobSelected(selectedJob, CancellationToken.None);
+            }
 
             // Scroll to bottom after loading
             ScrollToBottom();
