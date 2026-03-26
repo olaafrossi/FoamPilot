@@ -102,6 +102,7 @@ public partial class App : Application
             new ViewMap<RunControlPage, RunControlModel>(),
             new ViewMap<LogsPage, LogsModel>(),
             new ViewMap<DictEditorPage, DictEditorModel>(),
+            new ViewMap<WizardPage, WizardModel>(),
             new ViewMap<SettingsPage, SettingsModel>()
         );
 
@@ -114,6 +115,7 @@ public partial class App : Application
                     new("RunControl", View: views.FindByViewModel<RunControlModel>()),
                     new("Logs", View: views.FindByViewModel<LogsModel>()),
                     new("DictEditor", View: views.FindByViewModel<DictEditorModel>()),
+                    new("Wizard", View: views.FindByViewModel<WizardModel>()),
                     new("Settings", View: views.FindByViewModel<SettingsModel>()),
                 ]
             )

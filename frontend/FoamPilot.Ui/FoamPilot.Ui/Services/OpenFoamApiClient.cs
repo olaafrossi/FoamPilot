@@ -207,6 +207,98 @@ public sealed class OpenFoamApiClient : IOpenFoamApiClient
 
     private sealed record FoamFileResponse(string Path);
 
+    // ── Pipeline ──────────────────────────────────────────────────────
+
+    public async Task<IImmutableList<TemplateMetadata>> GetTemplatesWithMetadataAsync(CancellationToken ct) =>
+        await WithRetryAsync(async () =>
+        {
+            var dtos = await _http.GetFromJsonAsync<List<TemplateMetadataDto>>("templates", JsonOptions, ct)
+                ?? [];
+            return dtos.Select(d => d.ToModel()).ToImmutableList();
+        }, ct);
+
+    public async Task<PipelineInfo> CreatePipelineAsync(string caseName, string template, CancellationToken ct) =>
+        await WithRetryAsync(async () =>
+        {
+            var payload = new { case_name = caseName, template };
+            var response = await _http.PostAsJsonAsync("pipeline/create", payload, JsonOptions, ct);
+            response.EnsureSuccessStatusCode();
+            var dto = await response.Content.ReadFromJsonAsync<PipelineDto>(JsonOptions, ct);
+            return dto!.ToModel();
+        }, ct);
+
+    public async Task<PipelineInfo> GetPipelineAsync(string caseName, CancellationToken ct) =>
+        await WithRetryAsync(async () =>
+        {
+            var dto = await _http.GetFromJsonAsync<PipelineDto>(
+                $"pipeline/{Uri.EscapeDataString(caseName)}", JsonOptions, ct);
+            return dto!.ToModel();
+        }, ct);
+
+    public async Task<PipelineInfo> AdvancePipelineAsync(string caseName, string targetState, CancellationToken ct) =>
+        await WithRetryAsync(async () =>
+        {
+            var payload = new { target_state = targetState };
+            var response = await _http.PostAsJsonAsync(
+                $"pipeline/{Uri.EscapeDataString(caseName)}/advance", payload, JsonOptions, ct);
+            response.EnsureSuccessStatusCode();
+            var dto = await response.Content.ReadFromJsonAsync<PipelineDto>(JsonOptions, ct);
+            return dto!.ToModel();
+        }, ct);
+
+    public async Task<IImmutableList<ValidationResult>> ValidatePipelineAsync(string caseName, string targetState, CancellationToken ct) =>
+        await WithRetryAsync(async () =>
+        {
+            var payload = new { target_state = targetState };
+            var response = await _http.PostAsJsonAsync(
+                $"pipeline/{Uri.EscapeDataString(caseName)}/validate", payload, JsonOptions, ct);
+            response.EnsureSuccessStatusCode();
+            var dtos = await response.Content.ReadFromJsonAsync<List<ValidationResultDto>>(JsonOptions, ct)
+                ?? [];
+            return dtos.Select(d => new ValidationResult(d.Rule, d.Passed, d.Message ?? "")).ToImmutableList();
+        }, ct);
+
+    public async Task<PipelineInfo> ResetPipelineStepAsync(string caseName, string step, string targetState, CancellationToken ct) =>
+        await WithRetryAsync(async () =>
+        {
+            var payload = new { target_state = targetState };
+            var response = await _http.PostAsJsonAsync(
+                $"pipeline/{Uri.EscapeDataString(caseName)}/reset/{Uri.EscapeDataString(step)}", payload, JsonOptions, ct);
+            response.EnsureSuccessStatusCode();
+            var dto = await response.Content.ReadFromJsonAsync<PipelineDto>(JsonOptions, ct);
+            return dto!.ToModel();
+        }, ct);
+
+    private sealed record TemplateMetadataDto(
+        string Name, string Path, string? Description, string? Difficulty,
+        string? Solver, string? EstimatedRuntime,
+        List<string>? LearningObjectives, List<string>? Fields)
+    {
+        public TemplateMetadata ToModel() => new(
+            Name, Path,
+            Description ?? "", Difficulty ?? "", Solver ?? "", EstimatedRuntime ?? "",
+            (LearningObjectives ?? []).ToImmutableList(),
+            (Fields ?? []).ToImmutableList());
+    }
+
+    [Uno.Extensions.Equality.ImplicitKeys(IsEnabled = false)]
+    private sealed record PipelineDto(
+        string Id, string CaseName, string? Template, string State, string CreatedAt,
+        Dictionary<string, StepDto>? Steps,
+        string? ActiveJobId,
+        List<ValidationErrorDto>? ValidationErrors)
+    {
+        public PipelineInfo ToModel() => new(
+            Id, CaseName, Template ?? "", State, CreatedAt,
+            (Steps ?? new()).ToDictionary(k => k.Key, v => new StepInfo(v.Value.Status ?? "pending")),
+            ActiveJobId,
+            (ValidationErrors ?? []).Select(e => new ValidationError(e.Rule ?? "", e.Passed, e.Message ?? "")).ToImmutableList());
+    }
+
+    private sealed record StepDto(string? Status);
+    private sealed record ValidationErrorDto(string? Rule, bool Passed, string? Message);
+    private sealed record ValidationResultDto(string Rule, bool Passed, string? Message);
+
     // ── DTOs for JSON deserialization ────────────────────────────────
 
     private sealed record CaseDto(string Name, string Path, DateTime? Modified)

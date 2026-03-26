@@ -57,6 +57,9 @@
         <muxc:NavigationViewItem Content="Dict Editor"
             uen:Navigation.Request="DictEditor"
             Icon="Edit" />
+        <muxc:NavigationViewItem Content="Wizard"
+            uen:Navigation.Request="Wizard"
+            Icon="Directions" />
       </muxc:NavigationView.MenuItems>
 
       <muxc:NavigationView.FooterMenuItems>

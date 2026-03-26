@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(xargs grep:*)",
+      "Bash(dotnet build:*)",
+      "Read(//c/Users/OlaafRossi/.nuget/packages/uno.extensions.reactive/**)",
+      "Read(//c/Users/OlaafRossi/.nuget/packages/uno.extensions.reactive.winui/**)",
+      "Bash(dotnet-ildasm Uno.Extensions.Reactive.dll)",
+      "Bash(grep -r ForEachAsync /c/Users/OlaafRossi/.nuget/packages/uno.extensions.reactive/7.1.1/ --include=*.xml)",
+      "Bash(grep -r Combine /c/Users/OlaafRossi/.nuget/packages/uno.extensions.reactive/7.1.1/ --include=*.xml)"
+    ]
+  }
+}

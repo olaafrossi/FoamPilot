@@ -18,4 +18,12 @@ public interface IOpenFoamApiClient
     Task<string> GetFileContentAsync(string caseName, string filePath, CancellationToken ct);
     Task SaveFileContentAsync(string caseName, string filePath, string content, CancellationToken ct);
     Task<string> EnsureFoamFileAsync(string caseName, CancellationToken ct);
+
+    // ── Pipeline ──────────────────────────────────────────────────
+    Task<IImmutableList<TemplateMetadata>> GetTemplatesWithMetadataAsync(CancellationToken ct);
+    Task<PipelineInfo> CreatePipelineAsync(string caseName, string template, CancellationToken ct);
+    Task<PipelineInfo> GetPipelineAsync(string caseName, CancellationToken ct);
+    Task<PipelineInfo> AdvancePipelineAsync(string caseName, string targetState, CancellationToken ct);
+    Task<IImmutableList<ValidationResult>> ValidatePipelineAsync(string caseName, string targetState, CancellationToken ct);
+    Task<PipelineInfo> ResetPipelineStepAsync(string caseName, string step, string targetState, CancellationToken ct);
 }

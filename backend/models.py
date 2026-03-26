@@ -73,3 +73,47 @@ class FileNode(BaseModel):
     path: str
     type: str  # "file" | "dir"
     children: list["FileNode"] | None = None
+
+
+# ── Pipeline ────────────────────────────────────────────────────────
+
+
+class PipelineCreateRequest(BaseModel):
+    case_name: str = Field(..., min_length=1, max_length=128, pattern=r"^[a-zA-Z0-9_\-]+$")
+    template: str = Field("", description="Template name to create from, or empty for existing case")
+
+
+class PipelineAdvanceRequest(BaseModel):
+    target_state: str = Field(..., description="Target state: meshed, configured, or complete")
+
+
+class PipelineResetRequest(BaseModel):
+    target_state: str = Field(..., description="State to reset to: draft, meshed, or configured")
+
+
+class ValidationResultResponse(BaseModel):
+    rule: str
+    passed: bool
+    message: str = ""
+
+
+class PipelineResponse(BaseModel):
+    id: str
+    case_name: str
+    template: str = ""
+    state: str
+    created_at: str
+    steps: dict
+    active_job_id: Optional[str] = None
+    validation_errors: list[dict] = []
+
+
+class TemplateInfo(BaseModel):
+    name: str
+    path: str
+    description: str = ""
+    difficulty: str = ""
+    solver: str = ""
+    estimated_runtime: str = ""
+    learning_objectives: list[str] = []
+    fields: list[str] = []
