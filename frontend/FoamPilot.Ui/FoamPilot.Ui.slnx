@@ -9,4 +9,5 @@
   <Project Path="FoamPilot.Ui/FoamPilot.Ui.csproj">
     <Deploy />
   </Project>
+  <Project Path="FoamPilot.Ui.Tests/FoamPilot.Ui.Tests.csproj" />
 </Solution>

@@ -5,7 +5,25 @@
     xmlns:muxc="using:Microsoft.UI.Xaml.Controls">
 
   <Grid Background="{ThemeResource BackgroundBrush}">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+    </Grid.RowDefinitions>
+
+    <!-- Update available InfoBar -->
+    <muxc:InfoBar x:Name="UpdateInfoBar"
+        Grid.Row="0"
+        IsOpen="False"
+        Severity="Informational"
+        Title="Update available"
+        IsClosable="True">
+      <muxc:InfoBar.ActionButton>
+        <Button x:Name="UpdateNowButton" Content="Update Now" Click="UpdateNow_Click" />
+      </muxc:InfoBar.ActionButton>
+    </muxc:InfoBar>
+
     <muxc:NavigationView x:Name="NavView"
+        Grid.Row="1"
         IsBackButtonVisible="Collapsed"
         IsPaneToggleButtonVisible="True"
         IsSettingsVisible="False"
