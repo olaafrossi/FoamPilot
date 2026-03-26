@@ -42,12 +42,16 @@ public sealed class RunStep : WizardStepBase
     private readonly List<ISeries> _chartSeries = [];
     private int _iteration;
 
+    // Matches both serial and parallel (mpirun [N] prefix) output:
+    //   "Solving for Ux, Initial residual = 0.123, ..."
+    //   "[0] Solving for Ux, Initial residual = 0.123, ..."
     private static readonly Regex ResidualRegex = new(
-        @"Solving for (\w+), Initial residual = ([0-9.eE+-]+), Final residual = ([0-9.eE+-]+)",
+        @"Solving for (\w+), Initial residual = ([0-9.eE+\-]+), Final residual = ([0-9.eE+\-]+)",
         RegexOptions.Compiled);
 
+    // Matches "Time = 123" with optional mpirun prefix
     private static readonly Regex TimeRegex = new(
-        @"^Time = (\d+)", RegexOptions.Compiled);
+        @"Time = (\d+)", RegexOptions.Compiled);
 
     public RunStep(HttpClient http, AppConfig config) : base(http, config) { }
 

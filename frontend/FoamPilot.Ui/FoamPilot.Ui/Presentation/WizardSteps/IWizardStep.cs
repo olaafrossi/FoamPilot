@@ -88,6 +88,126 @@ public abstract class WizardStepBase : IWizardStep
     /// <summary>Set the active case name. Called by the wizard page when a case is created.</summary>
     public void SetCaseName(string caseName) => CaseName = caseName;
 
+    /// <summary>
+    /// Create a Monaco-based code editor (WebView2) with line numbers, syntax highlighting,
+    /// and diff view support. Falls back to a plain TextBox if WebView2 is unavailable.
+    /// </summary>
+    protected async Task<(FrameworkElement control, Func<Task<string>> getContent, Func<string, Task> setContent, Func<Task> showDiff)>
+        CreateMonacoEditorAsync()
+    {
+        try
+        {
+            var webView = new WebView2
+            {
+                DefaultBackgroundColor = Microsoft.UI.ColorHelper.FromArgb(255, 30, 30, 30),
+            };
+            System.Diagnostics.Debug.WriteLine("[FoamPilot] Creating WebView2 for Monaco editor...");
+            await webView.EnsureCoreWebView2Async();
+            System.Diagnostics.Debug.WriteLine("[FoamPilot] WebView2 initialized successfully.");
+
+            var editorDir = System.IO.Path.Combine(
+                AppDomain.CurrentDomain.BaseDirectory, "Assets", "WebViewer");
+            webView.CoreWebView2.SetVirtualHostNameToFolderMapping(
+                "foampilot.editor", editorDir,
+                Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind.Allow);
+            webView.Source = new Uri("https://foampilot.editor/code-editor.html");
+
+            string? pendingContent = null;
+            var contentTcs = new TaskCompletionSource<string>();
+            bool ready = false;
+
+            webView.CoreWebView2.WebMessageReceived += (_, e) =>
+            {
+                try
+                {
+                    using var doc = System.Text.Json.JsonDocument.Parse(e.WebMessageAsJson);
+                    var type = doc.RootElement.GetProperty("type").GetString();
+                    if (type == "ready")
+                    {
+                        ready = true;
+                        if (pendingContent is not null)
+                        {
+                            var msg = System.Text.Json.JsonSerializer.Serialize(
+                                new { action = "setContent", content = pendingContent });
+                            webView.CoreWebView2.PostWebMessageAsJson(msg);
+                            pendingContent = null;
+                        }
+                    }
+                    else if (type == "content")
+                    {
+                        var content = doc.RootElement.GetProperty("content").GetString() ?? "";
+                        contentTcs.TrySetResult(content);
+                    }
+                }
+                catch { }
+            };
+
+            Task<string> GetContent()
+            {
+                contentTcs = new TaskCompletionSource<string>();
+                var msg = System.Text.Json.JsonSerializer.Serialize(new { action = "getContent" });
+                webView.CoreWebView2.PostWebMessageAsJson(msg);
+                return contentTcs.Task.WaitAsync(TimeSpan.FromSeconds(2));
+            }
+
+            Task SetContent(string content)
+            {
+                if (ready)
+                {
+                    var msg = System.Text.Json.JsonSerializer.Serialize(
+                        new { action = "setContent", content });
+                    webView.CoreWebView2.PostWebMessageAsJson(msg);
+                }
+                else
+                {
+                    pendingContent = content;
+                }
+                return Task.CompletedTask;
+            }
+
+            Task ShowDiff()
+            {
+                if (ready)
+                {
+                    var msg = System.Text.Json.JsonSerializer.Serialize(new { action = "showDiff" });
+                    webView.CoreWebView2.PostWebMessageAsJson(msg);
+                }
+                return Task.CompletedTask;
+            }
+
+            return (webView, GetContent, SetContent, ShowDiff);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"[FoamPilot] WebView2/Monaco failed: {ex.Message}");
+            // Fallback: plain TextBox with monospace font
+            var textBox = new TextBox
+            {
+                AcceptsReturn = true,
+                TextWrapping = TextWrapping.NoWrap,
+                FontFamily = new FontFamily("Cascadia Code, Consolas, monospace"),
+                FontSize = 13,
+                IsSpellCheckEnabled = false,
+                Background = new SolidColorBrush(Microsoft.UI.ColorHelper.FromArgb(255, 30, 30, 30)),
+                Foreground = new SolidColorBrush(Microsoft.UI.Colors.LightGray),
+                BorderThickness = new Thickness(0),
+                Padding = new Thickness(8),
+            };
+            var scroll = new ScrollViewer
+            {
+                Content = textBox,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            };
+            return (
+                scroll,
+                () => Task.FromResult(textBox.Text),
+                content => { textBox.Text = content; return Task.CompletedTask; },
+                () => Task.CompletedTask
+            );
+        }
+    }
+
     /// <summary>Load a file from the current case via the backend API.</summary>
     protected async Task<string?> LoadFileAsync(string relativePath)
     {

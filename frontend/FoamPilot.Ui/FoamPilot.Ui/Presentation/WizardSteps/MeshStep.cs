@@ -277,98 +277,171 @@ public sealed class MeshStep : WizardStepBase
             if (!okSnappy) { setStatus("snappyHexMesh failed."); return false; }
         }
 
-        // Phase 4: checkMesh
+        // Phase 4: checkMesh — run and parse the log output directly
         setStatus("Checking mesh quality...");
         var (checkOk, checkJobId) = await RunCommandAsync("checkMesh", log, setStatus, ct);
 
         if (checkOk && !string.IsNullOrEmpty(checkJobId))
         {
-            await ShowMeshQuality(checkJobId, log);
+            // Parse quality from the job log (avoids running checkMesh again via API)
+            await ShowMeshQualityFromLog(checkJobId, log);
         }
-
-        // Phase 5: 3D preview
-        await Load3DPreview();
 
         IsComplete = true;
         setStatus($"✓ Mesh generation complete{(useParallel ? $" ({_cores} cores)" : "")}.");
+
+        // Phase 5: 3D preview — fire and forget on UI thread, don't block completion
+        // WebView2 must be created on the UI thread
+        if (_previewContainer is not null)
+        {
+            _previewContainer.DispatcherQueue?.TryEnqueue(async () =>
+            {
+                try { await Load3DPreviewOnUIThread(); }
+                catch { /* WebView2 not available */ }
+            });
+        }
+
         return true;
     }
 
-    private async Task ShowMeshQuality(string jobId, Action<string> log)
+    private async Task ShowMeshQualityFromLog(string jobId, Action<string> log)
     {
         if (_qualityText is null || _qualityPanel is null) return;
 
         try
         {
-            var resp = await Http.GetAsync($"/cases/{CaseName}/mesh-quality");
-            if (resp.IsSuccessStatusCode)
+            // Fetch the checkMesh log we already ran (no second checkMesh execution)
+            var resp = await Http.GetAsync($"/jobs/{jobId}/log");
+            if (!resp.IsSuccessStatusCode) return;
+            var logText = await resp.Content.ReadAsStringAsync();
+
+            // Parse key metrics from checkMesh output
+            int cells = 0;
+            double maxNonOrtho = 0, maxSkew = 0;
+            bool meshOk = logText.Contains("Mesh OK.");
+
+            foreach (var line in logText.Split('\n'))
             {
-                var json = await resp.Content.ReadAsStringAsync();
-                using var doc = JsonDocument.Parse(json);
-                var root = doc.RootElement;
-
-                var cells = root.TryGetProperty("cells", out var c) ? c.GetInt32() : 0;
-                var maxNonOrtho = root.TryGetProperty("max_non_orthogonality", out var no) ? no.GetDouble() : 0;
-                var maxSkew = root.TryGetProperty("max_skewness", out var sk) ? sk.GetDouble() : 0;
-                var ok = root.TryGetProperty("ok", out var o) && o.GetBoolean();
-
-                var status = ok ? "✅ GOOD" : "⚠️ CHECK QUALITY";
-                _qualityText.Text = $"Cells: {cells:N0}  |  Max non-orthogonality: {maxNonOrtho:F1}°  |  Max skewness: {maxSkew:F2}  |  Quality: {status}";
-                _qualityText.Foreground = new SolidColorBrush(ok ? Microsoft.UI.Colors.LimeGreen : Microsoft.UI.Colors.Orange);
-                _qualityPanel.Visibility = Visibility.Visible;
+                var trimmed = line.Trim();
+                if (trimmed.StartsWith("cells:"))
+                {
+                    var parts = trimmed.Split(':');
+                    if (parts.Length > 1) int.TryParse(parts[1].Trim(), out cells);
+                }
+                else if (trimmed.StartsWith("Max non-orthogonality ="))
+                {
+                    var val = trimmed.Replace("Max non-orthogonality =", "").Trim().TrimEnd('.');
+                    double.TryParse(val, System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out maxNonOrtho);
+                }
+                else if (trimmed.StartsWith("Max skewness ="))
+                {
+                    var val = trimmed.Replace("Max skewness =", "").Trim().TrimEnd('.');
+                    double.TryParse(val, System.Globalization.NumberStyles.Float,
+                        System.Globalization.CultureInfo.InvariantCulture, out maxSkew);
+                }
             }
+
+            var status = meshOk ? "✅ GOOD" : "⚠️ CHECK QUALITY";
+            _qualityText.Text = $"Cells: {cells:N0}  |  Max non-orthogonality: {maxNonOrtho:F1}°  |  Max skewness: {maxSkew:F2}  |  Quality: {status}";
+            _qualityText.Foreground = new SolidColorBrush(meshOk ? Microsoft.UI.Colors.LimeGreen : Microsoft.UI.Colors.Orange);
+            _qualityPanel.Visibility = Visibility.Visible;
         }
         catch (Exception ex)
         {
-            log($"Could not fetch mesh quality: {ex.Message}");
+            log($"Could not parse mesh quality: {ex.Message}");
         }
     }
 
-    private async Task Load3DPreview()
+    private async Task Load3DPreviewOnUIThread()
     {
         if (_previewContainer is null || CaseName is null) return;
 
         try
         {
             // Find the geometry file in constant/triSurface/
-            var casePath = System.IO.Path.Combine(Config.LocalCasesPath, CaseName, "constant", "triSurface");
-            if (!System.IO.Directory.Exists(casePath)) return;
+            var triDir = System.IO.Path.Combine(Config.LocalCasesPath, CaseName, "constant", "triSurface");
+            if (!System.IO.Directory.Exists(triDir)) return;
 
-            var stlFile = System.IO.Directory.GetFiles(casePath, "*.stl").FirstOrDefault()
-                       ?? System.IO.Directory.GetFiles(casePath, "*.obj").FirstOrDefault();
-            if (stlFile is null) return;
+            // Search for geometry: .stl, .obj, then .obj.gz (decompress if needed)
+            var geoFile = System.IO.Directory.GetFiles(triDir, "*.stl").FirstOrDefault()
+                       ?? System.IO.Directory.GetFiles(triDir, "*.obj")
+                              .FirstOrDefault(f => !f.EndsWith(".gz", StringComparison.OrdinalIgnoreCase));
+
+            // If only .obj.gz exists, decompress it
+            if (geoFile is null)
+            {
+                var gzFile = System.IO.Directory.GetFiles(triDir, "*.obj.gz").FirstOrDefault();
+                if (gzFile is not null)
+                {
+                    var decompressed = gzFile[..^3]; // strip .gz
+                    if (!System.IO.File.Exists(decompressed))
+                    {
+                        using var gzStream = new System.IO.Compression.GZipStream(
+                            System.IO.File.OpenRead(gzFile), System.IO.Compression.CompressionMode.Decompress);
+                        using var outStream = System.IO.File.Create(decompressed);
+                        await gzStream.CopyToAsync(outStream);
+                    }
+                    geoFile = decompressed;
+                }
+            }
+
+            if (geoFile is null) return;
+
+            System.Diagnostics.Debug.WriteLine($"[FoamPilot] Loading 3D preview for: {geoFile}");
 
             var webView = new WebView2
             {
                 DefaultBackgroundColor = Microsoft.UI.ColorHelper.FromArgb(255, 26, 26, 46),
             };
 
+            System.Diagnostics.Debug.WriteLine("[FoamPilot] Initializing WebView2 for mesh preview...");
             await webView.EnsureCoreWebView2Async();
+            System.Diagnostics.Debug.WriteLine("[FoamPilot] WebView2 for mesh preview initialized.");
 
-            // Navigate to viewer with file param
-            var viewerPath = System.IO.Path.Combine(
-                AppDomain.CurrentDomain.BaseDirectory, "Assets", "WebViewer", "mesh-viewer.html");
+            // Use virtual host mapping so Three.js CDN loads work (file:// blocks cross-origin)
+            var viewerDir = System.IO.Path.Combine(
+                AppDomain.CurrentDomain.BaseDirectory, "Assets", "WebViewer");
+            var viewerFile = System.IO.Path.Combine(viewerDir, "mesh-viewer.html");
 
-            if (System.IO.File.Exists(viewerPath))
+            if (System.IO.File.Exists(viewerFile))
             {
-                var fileUri = new Uri(stlFile).AbsoluteUri;
-                webView.Source = new Uri($"file:///{viewerPath}?file={Uri.EscapeDataString(fileUri)}");
+                // Map local dirs as virtual hosts so we avoid file:// CORS issues
+                webView.CoreWebView2.SetVirtualHostNameToFolderMapping(
+                    "foampilot.viewer", viewerDir,
+                    Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind.Allow);
+                webView.CoreWebView2.SetVirtualHostNameToFolderMapping(
+                    "foampilot.cases", System.IO.Path.Combine(Config.LocalCasesPath, CaseName),
+                    Microsoft.Web.WebView2.Core.CoreWebView2HostResourceAccessKind.Allow);
+
+                // Build the geometry URL using the virtual host
+                var relPath = System.IO.Path.GetRelativePath(
+                    System.IO.Path.Combine(Config.LocalCasesPath, CaseName), geoFile)
+                    .Replace("\\", "/");
+                var geoUrl = $"https://foampilot.cases/{relPath}";
+
+                webView.Source = new Uri($"https://foampilot.viewer/mesh-viewer.html?file={Uri.EscapeDataString(geoUrl)}");
                 _previewContainer.Child = webView;
                 _meshPreview = webView;
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // WebView2 not available — show fallback
-            _previewContainer.Child = new TextBlock
+            System.Diagnostics.Debug.WriteLine($"[FoamPilot] 3D preview failed: {ex}");
+            // WebView2 not available or other error — show fallback with error detail
+            if (_previewContainer is not null)
             {
-                Text = "3D preview unavailable.\nInstall WebView2 Runtime for 3D mesh viewing.\nMesh generated successfully — continue to next step.",
-                Foreground = new SolidColorBrush(Microsoft.UI.Colors.Gray),
-                TextWrapping = TextWrapping.Wrap,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                TextAlignment = TextAlignment.Center,
-            };
+                _previewContainer.Child = new TextBlock
+                {
+                    Text = $"3D preview error: {ex.Message}\n\nMesh generated successfully — continue to next step.",
+                    Foreground = new SolidColorBrush(Microsoft.UI.Colors.Orange),
+                    TextWrapping = TextWrapping.Wrap,
+                    HorizontalAlignment = HorizontalAlignment.Center,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    TextAlignment = TextAlignment.Center,
+                    Padding = new Thickness(12),
+                };
+            }
         }
     }
 }

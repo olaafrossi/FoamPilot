@@ -14,11 +14,16 @@ public sealed class SolverStep : WizardStepBase
     public override string Title => "Solver";
     public override int Index => 3;
 
-    private TextBox? _editor;
+    private FrameworkElement? _editorControl;
+    private Func<Task<string>>? _getContent;
+    private Func<string, Task>? _setContent;
+    private Func<Task>? _showDiff;
     private ComboBox? _fileSelector;
     private TextBlock? _descriptionText;
+    private Grid? _editorHost;
     private string? _currentFile;
     private string? _originalContent;
+    private bool _editorInitialized;
     private readonly List<string> _solverFiles = [];
 
     private static readonly string[] DefaultSolverFiles =
@@ -67,14 +72,29 @@ public sealed class SolverStep : WizardStepBase
         Grid.SetRow(header, 0);
         root.Children.Add(header);
 
+        var selectorRow = new Grid();
+        selectorRow.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        selectorRow.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
         _fileSelector = new ComboBox
         {
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            Margin = new Thickness(0, 0, 0, 4),
+            Margin = new Thickness(0, 0, 8, 0),
         };
         _fileSelector.SelectionChanged += async (_, _) => await LoadSelectedFile();
-        Grid.SetRow(_fileSelector, 1);
-        root.Children.Add(_fileSelector);
+        Grid.SetColumn(_fileSelector, 0);
+        selectorRow.Children.Add(_fileSelector);
+
+        var diffButton = new Button { Content = "Show Diff", FontSize = 12 };
+        diffButton.Click += async (_, _) =>
+        {
+            if (_showDiff is not null) await _showDiff();
+        };
+        Grid.SetColumn(diffButton, 1);
+        selectorRow.Children.Add(diffButton);
+
+        Grid.SetRow(selectorRow, 1);
+        root.Children.Add(selectorRow);
 
         _descriptionText = new TextBlock
         {
@@ -87,28 +107,34 @@ public sealed class SolverStep : WizardStepBase
         Grid.SetRow(_descriptionText, 2);
         root.Children.Add(_descriptionText);
 
-        _editor = new TextBox
+        _editorHost = new Grid();
+        _editorHost.Children.Add(new TextBlock
         {
-            AcceptsReturn = true,
-            TextWrapping = TextWrapping.NoWrap,
-            FontFamily = new FontFamily("Cascadia Code, Consolas, monospace"),
-            FontSize = 12,
-            IsSpellCheckEnabled = false,
-        };
-        var scroll = new ScrollViewer
-        {
-            Content = _editor,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-        };
-        Grid.SetRow(scroll, 3);
-        root.Children.Add(scroll);
+            Text = "Loading editor...",
+            Foreground = new SolidColorBrush(Microsoft.UI.Colors.Gray),
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        Grid.SetRow(_editorHost, 3);
+        root.Children.Add(_editorHost);
 
         return root;
     }
 
     public override async Task OnEnterAsync()
     {
+        if (!_editorInitialized && _editorHost is not null)
+        {
+            _editorInitialized = true;
+            var (control, get, set, diff) = await CreateMonacoEditorAsync();
+            _editorControl = control;
+            _getContent = get;
+            _setContent = set;
+            _showDiff = diff;
+            _editorHost.Children.Clear();
+            _editorHost.Children.Add(control);
+        }
+
         if (_fileSelector is null) return;
         _fileSelector.Items.Clear();
         foreach (var f in _solverFiles)
@@ -121,11 +147,12 @@ public sealed class SolverStep : WizardStepBase
 
     private async Task LoadSelectedFile()
     {
-        if (_fileSelector?.SelectedItem is not string filePath || _editor is null) return;
+        if (_fileSelector?.SelectedItem is not string filePath) return;
         await SaveCurrentFile();
 
         var content = await LoadFileAsync(filePath);
-        _editor.Text = content ?? $"// Could not load {filePath}";
+        if (_setContent is not null)
+            await _setContent(content ?? $"// Could not load {filePath}");
         _originalContent = content;
         _currentFile = content is not null ? filePath : null;
 
@@ -139,11 +166,16 @@ public sealed class SolverStep : WizardStepBase
 
     private async Task SaveCurrentFile()
     {
-        if (_currentFile is null || _editor is null || _originalContent is null) return;
-        if (_editor.Text != _originalContent)
+        if (_currentFile is null || _getContent is null || _originalContent is null) return;
+        try
         {
-            await SaveFileAsync(_currentFile, _editor.Text);
-            _originalContent = _editor.Text;
+            var current = await _getContent();
+            if (current != _originalContent)
+            {
+                await SaveFileAsync(_currentFile, current);
+                _originalContent = current;
+            }
         }
+        catch { }
     }
 }
