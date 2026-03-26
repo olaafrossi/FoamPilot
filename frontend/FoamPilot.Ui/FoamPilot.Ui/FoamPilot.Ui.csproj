@@ -39,5 +39,6 @@
 
   <ItemGroup>
     <PackageReference Include="LiveChartsCore.SkiaSharpView.Uno.WinUI" />
+    <PackageReference Include="Velopack" />
   </ItemGroup>
 </Project>

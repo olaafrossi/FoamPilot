@@ -10,6 +10,8 @@
   <UserControl.Resources>
     <local:ContainerStatusToColorConverter x:Key="StatusColorConverter" />
     <local:BoolToVisibilityConverter x:Key="InvertedBoolToVisibility" Invert="True" />
+    <local:NullToBoolConverter x:Key="NullToBoolConverter" />
+    <local:VersionMessageConverter x:Key="VersionMessageConverter" />
   </UserControl.Resources>
 
   <Grid Background="{ThemeResource BackgroundBrush}">
@@ -18,19 +20,40 @@
       <RowDefinition Height="*" />
     </Grid.RowDefinitions>
 
-    <!-- Backend disconnected InfoBar -->
-    <uer:FeedView Source="{Binding IsBackendConnected}" Grid.Row="0">
-      <uer:FeedView.ValueTemplate>
-        <DataTemplate>
-          <muxc:InfoBar
-              IsOpen="{Binding Converter={StaticResource InvertedBoolToVisibility}}"
-              Severity="Warning"
-              Title="Backend not reachable"
-              Message="Start container from Settings."
-              IsClosable="False" />
-        </DataTemplate>
-      </uer:FeedView.ValueTemplate>
-    </uer:FeedView>
+    <StackPanel Grid.Row="0">
+      <!-- Backend disconnected InfoBar -->
+      <uer:FeedView Source="{Binding IsBackendConnected}">
+        <uer:FeedView.ValueTemplate>
+          <DataTemplate>
+            <muxc:InfoBar
+                IsOpen="{Binding Converter={StaticResource InvertedBoolToVisibility}}"
+                Severity="Warning"
+                Title="Backend not reachable"
+                Message="Start container from Settings."
+                IsClosable="False" />
+          </DataTemplate>
+        </uer:FeedView.ValueTemplate>
+      </uer:FeedView>
+
+      <!-- Update available InfoBar -->
+      <uer:FeedView Source="{Binding AvailableUpdate}">
+        <uer:FeedView.ValueTemplate>
+          <DataTemplate>
+            <muxc:InfoBar
+                IsOpen="{Binding Converter={StaticResource NullToBoolConverter}}"
+                Severity="Informational"
+                Title="Update available"
+                Message="{Binding Converter={StaticResource VersionMessageConverter}}"
+                IsClosable="True">
+              <muxc:InfoBar.ActionButton>
+                <Button Content="Update Now"
+                    Command="{Binding DataContext.UpdateNow, ElementName=NavView}" />
+              </muxc:InfoBar.ActionButton>
+            </muxc:InfoBar>
+          </DataTemplate>
+        </uer:FeedView.ValueTemplate>
+      </uer:FeedView>
+    </StackPanel>
 
     <muxc:NavigationView x:Name="NavView"
         Grid.Row="1"

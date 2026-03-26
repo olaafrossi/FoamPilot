@@ -15,6 +15,20 @@
 **Trigger:** When file editing is needed in a 3rd location beyond DictEditor page and wizard.
 **Depends on:** Wizard ships first. GetModel() reflection cleanup (below) is a nice-to-have prerequisite.
 
+## Version-Pinned Backend Docker Updates
+**Priority:** Medium | **Effort:** human: ~4 days / CC: ~15 min
+**What:** When the UI auto-updates via Velopack, automatically detect if the Docker backend image version mismatches and prompt the user to pull the new image. Ship a `docker-compose.yml` that pins the backend image tag to a matching version (e.g., `ghcr.io/olaafrossi/foampilot-backend:v0.2.0`).
+**Why:** Frontend and backend share an API contract. If the UI updates but the backend stays on an old version, new API endpoints or schema changes will break silently. Currently deferred — users must manually pull new Docker images when instructed by release notes.
+**Context:** Deferred from the auto-update PR to limit scope. The auto-update only covers the desktop UI via Velopack. Backend runs in Docker with its own lifecycle. Start by adding a `/version` endpoint to the FastAPI backend that returns the expected API version, then compare it in the UI on startup.
+**Depends on:** Auto-update system must ship first. Backend CI/CD for publishing Docker images to GHCR.
+
+## WinGet Manifest Submission
+**Priority:** Low | **Effort:** human: ~2 hours / CC: ~10 min
+**What:** After the first successful GitHub Release with Velopack, submit a WinGet manifest to `microsoft/winget-pkgs` so users can `winget install FoamPilot`.
+**Why:** Secondary distribution channel for discoverability. Windows users who prefer package managers can install and update via `winget upgrade`.
+**Context:** WinGet manifests are YAML files submitted as PRs to the winget-pkgs community repo. Can be automated with `wingetcreate` in CI. Not critical since the primary audience (OpenFOAM users) will likely find FoamPilot through academic/CFD channels rather than WinGet search.
+**Depends on:** First successful GitHub Release with Velopack packaging.
+
 ## Replace Reflection-Based GetModel() Pattern
 **Priority:** Low | **Effort:** human: ~2 hours / CC: ~10 min
 **What:** Replace `DataContext?.GetType().GetProperty("Model")?.GetValue(DataContext) as XModel` with a typed base class or interface across all page code-behind files.

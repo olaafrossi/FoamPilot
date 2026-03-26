@@ -7,15 +7,18 @@ public partial record ShellModel
     private readonly INavigator _navigator;
     private readonly IDockerManager _docker;
     private readonly IOpenFoamApiClient _api;
+    private readonly IUpdateService _update;
 
     public ShellModel(
         INavigator navigator,
         IDockerManager docker,
-        IOpenFoamApiClient api)
+        IOpenFoamApiClient api,
+        IUpdateService update)
     {
         _navigator = navigator;
         _docker = docker;
         _api = api;
+        _update = update;
     }
 
     /// <summary>
@@ -41,4 +44,23 @@ public partial record ShellModel
             return false;
         }
     });
+
+    /// <summary>
+    /// Checks for app updates on startup and every 24 hours.
+    /// Returns the available version string, or null if up-to-date.
+    /// </summary>
+    public IFeed<string> AvailableUpdate => Feed.Async(async ct =>
+    {
+        var info = await _update.CheckForUpdateAsync(ct);
+        return info?.TargetVersion ?? string.Empty;
+    });
+
+    /// <summary>
+    /// Downloads the pending update, applies it, and restarts the app.
+    /// </summary>
+    public async ValueTask UpdateNow(CancellationToken ct)
+    {
+        await _update.DownloadUpdateAsync(null, ct);
+        _update.ApplyUpdateAndRestart();
+    }
 }

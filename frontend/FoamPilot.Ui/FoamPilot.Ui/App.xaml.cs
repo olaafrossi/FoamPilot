@@ -57,6 +57,9 @@ public partial class App : Application
 
                     // ── ParaView service ──
                     services.AddSingleton<IParaViewService, ParaViewService>();
+
+                    // ── Auto-update service ──
+                    services.AddSingleton<IUpdateService, UpdateService>();
                 })
                 .UseNavigation(ReactiveViewModelMappings.ViewModelMappings, RegisterRoutes)
             );
