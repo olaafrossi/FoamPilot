@@ -1,3 +1,4 @@
+using FoamPilot.Ui.Services;
 using Uno.Resizetizer;
 
 namespace FoamPilot.Ui;
@@ -53,6 +54,9 @@ public partial class App : Application
                 catch { /* Use defaults */ }
 
                 services.AddSingleton(Microsoft.Extensions.Options.Options.Create(config));
+
+                // ── Auto-update service ──
+                services.AddSingleton<IUpdateService, UpdateService>();
             });
 
         Host = hostBuilder.Build();
