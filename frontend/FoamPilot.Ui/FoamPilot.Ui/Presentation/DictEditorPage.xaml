@@ -1,20 +1,142 @@
 <Page x:Class="FoamPilot.Ui.Presentation.DictEditorPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:uer="using:Uno.Extensions.Reactive.UI"
+    xmlns:local="using:FoamPilot.Ui.Models"
+    xmlns:muxc="using:Microsoft.UI.Xaml.Controls"
     Background="{ThemeResource BackgroundBrush}">
 
-  <Grid Padding="24" RowSpacing="16">
+  <Grid Padding="24" ColumnSpacing="16" RowSpacing="8">
     <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
       <RowDefinition Height="Auto" />
       <RowDefinition Height="*" />
     </Grid.RowDefinitions>
 
+    <!-- Title -->
     <TextBlock Text="Dictionary Editor"
         Style="{ThemeResource TitleLargeTextBlockStyle}" />
 
-    <TextBlock Grid.Row="1"
-        Text="OpenFOAM dictionary editor — coming soon."
-        Style="{ThemeResource BodyMediumTextBlockStyle}"
-        Opacity="0.7" />
+    <!-- Validation warning InfoBar -->
+    <muxc:InfoBar Grid.Row="1"
+        x:Name="ValidationInfoBar"
+        IsOpen="False"
+        Severity="Warning"
+        Title="Brace Validation Warning" />
+
+    <!-- Main content: Tree + Editor -->
+    <Grid Grid.Row="2" ColumnSpacing="16">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="250" />
+        <ColumnDefinition Width="*" />
+      </Grid.ColumnDefinitions>
+
+      <!-- Left panel: Case selector + File tree -->
+      <Grid RowSpacing="12">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Case selector -->
+        <uer:FeedView Source="{Binding Cases}">
+          <uer:FeedView.ValueTemplate>
+            <DataTemplate>
+              <ComboBox x:Name="CaseComboBox"
+                  Header="Case"
+                  HorizontalAlignment="Stretch"
+                  ItemsSource="{Binding}"
+                  DisplayMemberPath="Name"
+                  SelectionChanged="CaseComboBox_SelectionChanged" />
+            </DataTemplate>
+          </uer:FeedView.ValueTemplate>
+          <uer:FeedView.ProgressTemplate>
+            <DataTemplate>
+              <ProgressRing IsActive="True" Width="24" Height="24" />
+            </DataTemplate>
+          </uer:FeedView.ProgressTemplate>
+        </uer:FeedView>
+
+        <!-- File tree -->
+        <uer:FeedView Source="{Binding FileTree}" Grid.Row="1">
+          <uer:FeedView.ValueTemplate>
+            <DataTemplate>
+              <muxc:TreeView x:Name="FileTreeView"
+                  ItemsSource="{Binding}"
+                  ItemInvoked="FileTreeView_ItemInvoked">
+                <muxc:TreeView.ItemTemplate>
+                  <muxc:TreeViewItemTemplateSelector>
+                    <muxc:TreeViewItemTemplateSelector.ItemTemplate>
+                      <DataTemplate x:DataType="local:FileNode">
+                        <muxc:TreeViewItem ItemsSource="{Binding Children}"
+                            Content="{Binding Name}"
+                            IsExpanded="True" />
+                      </DataTemplate>
+                    </muxc:TreeViewItemTemplateSelector.ItemTemplate>
+                  </muxc:TreeViewItemTemplateSelector>
+                </muxc:TreeView.ItemTemplate>
+              </muxc:TreeView>
+            </DataTemplate>
+          </uer:FeedView.ValueTemplate>
+          <uer:FeedView.NoneTemplate>
+            <DataTemplate>
+              <TextBlock Text="Select a case to browse files."
+                  Opacity="0.5"
+                  Style="{ThemeResource BodyMediumTextBlockStyle}" />
+            </DataTemplate>
+          </uer:FeedView.NoneTemplate>
+          <uer:FeedView.ProgressTemplate>
+            <DataTemplate>
+              <ProgressRing IsActive="True" Width="24" Height="24" />
+            </DataTemplate>
+          </uer:FeedView.ProgressTemplate>
+          <uer:FeedView.ErrorTemplate>
+            <DataTemplate>
+              <TextBlock Text="Failed to load file tree."
+                  Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
+            </DataTemplate>
+          </uer:FeedView.ErrorTemplate>
+        </uer:FeedView>
+      </Grid>
+
+      <!-- Right panel: Toolbar + Editor -->
+      <Grid Grid.Column="1" RowSpacing="8">
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto" />
+          <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Toolbar -->
+        <StackPanel Orientation="Horizontal" Spacing="8">
+          <Button x:Name="SaveButton"
+              Content="Save"
+              Click="SaveButton_Click"
+              IsEnabled="False" />
+          <Button x:Name="RevertButton"
+              Content="Revert"
+              Click="RevertButton_Click"
+              IsEnabled="False" />
+          <TextBlock x:Name="BreadcrumbText"
+              Text=""
+              VerticalAlignment="Center"
+              Opacity="0.7"
+              Margin="12,0,0,0"
+              Style="{ThemeResource BodyMediumTextBlockStyle}" />
+        </StackPanel>
+
+        <!-- Editor TextBox -->
+        <TextBox x:Name="EditorTextBox"
+            Grid.Row="1"
+            FontFamily="Cascadia Code, Consolas, Courier New, monospace"
+            FontSize="13"
+            AcceptsReturn="True"
+            TextWrapping="NoWrap"
+            IsSpellCheckEnabled="False"
+            ScrollViewer.VerticalScrollBarVisibility="Auto"
+            ScrollViewer.HorizontalScrollBarVisibility="Auto"
+            TextChanged="EditorTextBox_TextChanged"
+            IsEnabled="False" />
+      </Grid>
+    </Grid>
   </Grid>
 </Page>

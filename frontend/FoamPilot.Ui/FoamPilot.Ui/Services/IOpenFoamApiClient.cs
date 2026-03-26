@@ -12,4 +12,7 @@ public interface IOpenFoamApiClient
     Task<RunJob> GetJobAsync(string jobId, CancellationToken ct);
     Task CancelJobAsync(string jobId, CancellationToken ct);
     Task<string> GetSolverAsync(string caseName, CancellationToken ct);
+    Task<IImmutableList<FileNode>> GetFileTreeAsync(string caseName, CancellationToken ct);
+    Task<string> GetFileContentAsync(string caseName, string relativePath, CancellationToken ct);
+    Task SaveFileContentAsync(string caseName, string relativePath, string content, CancellationToken ct);
 }

@@ -91,6 +91,29 @@ public sealed class OpenFoamApiClient : IOpenFoamApiClient
         return "unknown";
     }
 
+    public async Task<IImmutableList<FileNode>> GetFileTreeAsync(string caseName, CancellationToken ct)
+    {
+        var nodes = await _http.GetFromJsonAsync<List<FileNodeDto>>(
+            $"cases/{Uri.EscapeDataString(caseName)}/files", JsonOptions, ct)
+            ?? [];
+        return nodes.Select(n => n.ToModel()).ToImmutableList();
+    }
+
+    public async Task<string> GetFileContentAsync(string caseName, string relativePath, CancellationToken ct)
+    {
+        var url = $"cases/{Uri.EscapeDataString(caseName)}/file?path={Uri.EscapeDataString(relativePath)}";
+        var result = await _http.GetFromJsonAsync<FileContentDto>(url, JsonOptions, ct);
+        return result?.Content ?? string.Empty;
+    }
+
+    public async Task SaveFileContentAsync(string caseName, string relativePath, string content, CancellationToken ct)
+    {
+        var url = $"cases/{Uri.EscapeDataString(caseName)}/file?path={Uri.EscapeDataString(relativePath)}";
+        var httpContent = new StringContent(content, System.Text.Encoding.UTF8, "text/plain");
+        var response = await _http.PutAsync(url, httpContent, ct);
+        response.EnsureSuccessStatusCode();
+    }
+
     // ── DTOs for JSON deserialization ────────────────────────────────
 
     private sealed record CaseDto(string Name, string Path, DateTime? Modified)
@@ -121,4 +144,19 @@ public sealed class OpenFoamApiClient : IOpenFoamApiClient
             EndTime,
             ExitCode);
     }
+
+    private sealed record FileNodeDto(
+        string Name,
+        string Path,
+        string Type,
+        List<FileNodeDto>? Children)
+    {
+        public FileNode ToModel() => new(
+            Name,
+            Path,
+            Type,
+            Children?.Select(c => c.ToModel()).ToImmutableList());
+    }
+
+    private sealed record FileContentDto(string Content);
 }
