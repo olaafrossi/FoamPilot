@@ -69,8 +69,9 @@ public sealed class OpenFoamApiClient : IOpenFoamApiClient
 
     public async Task<IImmutableList<RunJob>> GetJobsAsync(CancellationToken ct)
     {
-        // The backend doesn't have a list-all endpoint yet; return empty for now.
-        return ImmutableList<RunJob>.Empty;
+        var dtos = await _http.GetFromJsonAsync<List<JobDto>>("jobs", JsonOptions, ct)
+            ?? [];
+        return dtos.Select(d => d.ToModel()).ToImmutableList();
     }
 
     public async Task<RunJob> GetJobAsync(string jobId, CancellationToken ct)
@@ -91,28 +92,26 @@ public sealed class OpenFoamApiClient : IOpenFoamApiClient
         return "unknown";
     }
 
-    public async Task<IImmutableList<FileNode>> GetFileTreeAsync(string caseName, CancellationToken ct)
+    public async Task<string> GetJobLogAsync(string jobId, CancellationToken ct)
     {
-        var nodes = await _http.GetFromJsonAsync<List<FileNodeDto>>(
-            $"cases/{Uri.EscapeDataString(caseName)}/files", JsonOptions, ct)
-            ?? [];
-        return nodes.Select(n => n.ToModel()).ToImmutableList();
+        return await _http.GetStringAsync($"jobs/{Uri.EscapeDataString(jobId)}/log", ct);
     }
 
-    public async Task<string> GetFileContentAsync(string caseName, string relativePath, CancellationToken ct)
+    public async Task<Dictionary<string, List<ResidualPoint>>> GetJobResidualsAsync(string jobId, CancellationToken ct)
     {
-        var url = $"cases/{Uri.EscapeDataString(caseName)}/file?path={Uri.EscapeDataString(relativePath)}";
-        var result = await _http.GetFromJsonAsync<FileContentDto>(url, JsonOptions, ct);
-        return result?.Content ?? string.Empty;
+        var response = await _http.GetFromJsonAsync<ResidualsResponse>(
+            $"jobs/{Uri.EscapeDataString(jobId)}/residuals", JsonOptions, ct);
+        if (response?.Fields is null)
+            return new Dictionary<string, List<ResidualPoint>>();
+
+        return response.Fields.ToDictionary(
+            kvp => kvp.Key,
+            kvp => kvp.Value.Select(r => new ResidualPoint(
+                r.Iteration, kvp.Key, r.Initial, r.Final)).ToList());
     }
 
-    public async Task SaveFileContentAsync(string caseName, string relativePath, string content, CancellationToken ct)
-    {
-        var url = $"cases/{Uri.EscapeDataString(caseName)}/file?path={Uri.EscapeDataString(relativePath)}";
-        var httpContent = new StringContent(content, System.Text.Encoding.UTF8, "text/plain");
-        var response = await _http.PutAsync(url, httpContent, ct);
-        response.EnsureSuccessStatusCode();
-    }
+    private sealed record ResidualsResponse(Dictionary<string, List<ResidualEntryDto>>? Fields);
+    private sealed record ResidualEntryDto(int Iteration, double Initial, double Final, int NoIterations);
 
     // ── DTOs for JSON deserialization ────────────────────────────────
 
