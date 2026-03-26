@@ -164,15 +164,15 @@ public sealed class OpenFoamApiClient : IOpenFoamApiClient
     public async Task<string> GetFileContentAsync(string caseName, string filePath, CancellationToken ct)
     {
         var dto = await _http.GetFromJsonAsync<FileContentDto>(
-            $"cases/{Uri.EscapeDataString(caseName)}/files/{Uri.EscapeDataString(filePath)}", JsonOptions, ct);
+            $"cases/{Uri.EscapeDataString(caseName)}/file?path={Uri.EscapeDataString(filePath)}", JsonOptions, ct);
         return dto?.Content ?? string.Empty;
     }
 
     public async Task SaveFileContentAsync(string caseName, string filePath, string content, CancellationToken ct)
     {
-        var payload = new { content };
-        var response = await _http.PutAsJsonAsync(
-            $"cases/{Uri.EscapeDataString(caseName)}/files/{Uri.EscapeDataString(filePath)}", payload, JsonOptions, ct);
+        var httpContent = new StringContent(content, System.Text.Encoding.UTF8, "text/plain");
+        var response = await _http.PutAsync(
+            $"cases/{Uri.EscapeDataString(caseName)}/file?path={Uri.EscapeDataString(filePath)}", httpContent, ct);
         response.EnsureSuccessStatusCode();
     }
 

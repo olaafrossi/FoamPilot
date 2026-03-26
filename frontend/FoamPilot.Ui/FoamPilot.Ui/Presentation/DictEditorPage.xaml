@@ -58,39 +58,25 @@
         </uer:FeedView>
 
         <!-- File tree -->
-        <uer:FeedView Source="{Binding FileTree}" Grid.Row="1">
-          <uer:FeedView.ValueTemplate>
-            <DataTemplate>
-              <muxc:TreeView x:Name="FileTreeView"
-                  ItemsSource="{Binding}"
-                  ItemInvoked="FileTreeView_ItemInvoked">
-                <muxc:TreeView.ItemTemplate>
-                  <DataTemplate x:DataType="local:FileNode">
-                    <TextBlock Text="{Binding Name}" />
-                  </DataTemplate>
-                </muxc:TreeView.ItemTemplate>
-              </muxc:TreeView>
-            </DataTemplate>
-          </uer:FeedView.ValueTemplate>
-          <uer:FeedView.NoneTemplate>
-            <DataTemplate>
-              <TextBlock Text="Select a case to browse files."
-                  Opacity="0.5"
-                  Style="{ThemeResource BodyMediumTextBlockStyle}" />
-            </DataTemplate>
-          </uer:FeedView.NoneTemplate>
-          <uer:FeedView.ProgressTemplate>
-            <DataTemplate>
-              <ProgressRing IsActive="True" Width="24" Height="24" />
-            </DataTemplate>
-          </uer:FeedView.ProgressTemplate>
-          <uer:FeedView.ErrorTemplate>
-            <DataTemplate>
-              <TextBlock Text="Failed to load file tree."
-                  Foreground="{ThemeResource SystemFillColorCriticalBrush}" />
-            </DataTemplate>
-          </uer:FeedView.ErrorTemplate>
-        </uer:FeedView>
+        <Grid Grid.Row="1">
+          <TextBlock x:Name="TreePlaceholderText"
+              Text="Select a case to browse files."
+              Opacity="0.5"
+              Style="{ThemeResource BodyMediumTextBlockStyle}" />
+          <ProgressRing x:Name="TreeProgressRing"
+              IsActive="False" Width="24" Height="24"
+              HorizontalAlignment="Center" VerticalAlignment="Top"
+              Margin="0,24,0,0" />
+          <muxc:TreeView x:Name="FileTreeView"
+              ItemInvoked="FileTreeView_ItemInvoked"
+              Visibility="Collapsed">
+            <muxc:TreeView.ItemTemplate>
+              <DataTemplate x:DataType="muxc:TreeViewNode">
+                <TextBlock Text="{Binding Content.Name}" />
+              </DataTemplate>
+            </muxc:TreeView.ItemTemplate>
+          </muxc:TreeView>
+        </Grid>
       </Grid>
 
       <!-- Right panel: Toolbar + Editor -->

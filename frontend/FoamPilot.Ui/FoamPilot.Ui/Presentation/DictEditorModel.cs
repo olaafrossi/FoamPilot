@@ -11,6 +11,7 @@ public partial record DictEditorModel
     {
         _api = api;
 
+        State.ForEachAsync(SelectedCase, OnSelectedCaseChanged);
         State.ForEachAsync(SelectedFile, OnSelectedFileChanged);
         State.ForEachAsync(FileContent, async (content, ct) =>
         {
@@ -42,6 +43,30 @@ public partial record DictEditorModel
     public IState<bool> IsDirty => State<bool>.Value(this, () => false);
 
     public IState<string> ValidationWarning => State<string>.Empty(this);
+
+    /// <summary>State-based file tree for code-behind TreeViewNode building.</summary>
+    public IState<IImmutableList<FileNode>> FileTreeNodes => State<IImmutableList<FileNode>>.Empty(this);
+
+    // ── Case selection handler ─────────────────────────────────────────
+
+    private async ValueTask OnSelectedCaseChanged(FoamCase? foamCase, CancellationToken ct)
+    {
+        if (foamCase is null)
+        {
+            await FileTreeNodes.UpdateAsync(_ => ImmutableList<FileNode>.Empty, ct);
+            return;
+        }
+
+        try
+        {
+            var tree = await _api.GetFileTreeAsync(foamCase.Name, ct);
+            await FileTreeNodes.UpdateAsync(_ => tree, ct);
+        }
+        catch
+        {
+            await FileTreeNodes.UpdateAsync(_ => ImmutableList<FileNode>.Empty, ct);
+        }
+    }
 
     // ── File selection handler ────────────────────────────────────────
 
