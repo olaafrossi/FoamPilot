@@ -74,6 +74,7 @@ public partial class App : Application
             new ViewMap(ViewModel: typeof(ShellModel)),
             new ViewMap<DashboardPage, DashboardModel>(),
             new ViewMap<CasesPage, CasesModel>(),
+            new ViewMap<CaseBrowserPage, CaseBrowserModel>(),
             new ViewMap<RunControlPage, RunControlModel>(),
             new ViewMap<LogsPage, LogsModel>(),
             new ViewMap<DictEditorPage, DictEditorModel>(),
@@ -85,7 +86,7 @@ public partial class App : Application
                 Nested:
                 [
                     new("Dashboard", View: views.FindByViewModel<DashboardModel>(), IsDefault: true),
-                    new("Cases", View: views.FindByViewModel<CasesModel>()),
+                    new("Cases", View: views.FindByViewModel<CaseBrowserModel>()),
                     new("RunControl", View: views.FindByViewModel<RunControlModel>()),
                     new("Logs", View: views.FindByViewModel<LogsModel>()),
                     new("DictEditor", View: views.FindByViewModel<DictEditorModel>()),
