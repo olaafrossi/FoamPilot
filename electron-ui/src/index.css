@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+/* ═══════════════════════════════════════════════
+   FoamPilot Design System — VS Code Dark+ Theme
+   ═══════════════════════════════════════════════ */
+
+:root {
+  /* Backgrounds */
+  --bg-editor: #1e1e1e;
+  --bg-sidebar: #252526;
+  --bg-activitybar: #333333;
+  --bg-titlebar: #3c3c3c;
+  --bg-input: #3c3c3c;
+  --bg-tab-inactive: #2d2d2d;
+  --bg-statusbar: #007acc;
+  --bg-statusbar-running: #c27d00;
+  --bg-hover: #2a2d2e;
+  --bg-selection: #04395e;
+
+  /* Borders */
+  --border: #474747;
+  --border-focus: #007fd4;
+  --border-tab-active: #0078d4;
+
+  /* Text */
+  --fg: #cccccc;
+  --fg-muted: #858585;
+  --fg-disabled: #5a5a5a;
+  --fg-link: #3794ff;
+
+  /* Semantic */
+  --accent: #0078d4;
+  --accent-hover: #1177bb;
+  --accent-bg: #0e639c;
+  --error: #f48771;
+  --warning: #cca700;
+  --success: #89d185;
+  --info: #75beff;
+
+  /* Fonts */
+  --font-ui: "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "Cascadia Code", "Consolas", "Courier New", monospace;
+}
+
+/* ── Base ── */
+body {
+  margin: 0;
+  font-family: var(--font-ui);
+  font-size: 13px;
+  line-height: 1.4;
+  background: var(--bg-editor);
+  color: var(--fg);
+  overflow: hidden;
+  height: 100vh;
+  -webkit-font-smoothing: antialiased;
+}
+
+#root { height: 100vh; display: flex; }
+
+*:focus-visible {
+  outline: 1px solid var(--border-focus);
+  outline-offset: -1px;
+}
+
+/* ── Scrollbars ── */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #424242; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #555555; }
+
+/* ── Monaco editor container ── */
+.monaco-container { height: 100%; width: 100%; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

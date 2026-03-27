@@ -1,0 +1,47 @@
+{
+  "name": "foampilot",
+  "version": "1.0.0",
+  "description": "Aerodynamics made simple — guided OpenFOAM simulations",
+  "main": "electron/main.js",
+  "scripts": {
+    "dev": "vite",
+    "dev:electron": "concurrently \"vite\" \"wait-on http://localhost:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+    "build": "tsc && vite build",
+    "build:electron": "npm run build && electron-builder",
+    "preview": "vite preview"
+  },
+  "keywords": [
+    "cfd",
+    "openfoam",
+    "aerodynamics",
+    "simulation"
+  ],
+  "author": "OlaafRossi",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/three": "^0.183.1",
+    "@vitejs/plugin-react": "^6.0.1",
+    "concurrently": "^9.2.1",
+    "cross-env": "^7.0.3",
+    "electron": "^41.0.4",
+    "electron-builder": "^26.8.1",
+    "typescript": "^6.0.2",
+    "vite": "^8.0.3",
+    "wait-on": "^8.0.5"
+  },
+  "dependencies": {
+    "@monaco-editor/react": "^4.7.0",
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.5.0",
+    "@tailwindcss/vite": "^4.2.2",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "lucide-react": "^1.7.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-router-dom": "^7.13.2",
+    "recharts": "^3.8.1",
+    "tailwindcss": "^4.2.2",
+    "three": "^0.183.2"
+  }
+}
