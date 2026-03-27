@@ -22,8 +22,9 @@ RUN add-apt-repository -y ppa:deadsnakes/ppa && \
     update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
 
 # ── Python dependencies ──────────────────────────────────────────────
-RUN pip install --no-cache-dir --break-system-packages \
-        fastapi uvicorn[standard] websockets python-multipart
+COPY backend/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir --break-system-packages -r /tmp/requirements.txt && \
+    rm /tmp/requirements.txt
 
 # ── Non-root user ────────────────────────────────────────────────────
 RUN useradd -m -s /bin/bash openfoam && \
@@ -36,6 +37,9 @@ ENV FOAM_RUN=/home/openfoam/run
 COPY backend/ /app/
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh && chown -R openfoam:openfoam /app
+
+LABEL org.opencontainers.image.source="https://github.com/olaafrossi/FoamPilot"
+LABEL org.opencontainers.image.description="FoamPilot OpenFOAM backend"
 
 WORKDIR /app
 EXPOSE 8000

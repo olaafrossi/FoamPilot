@@ -7,37 +7,64 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 env:
-  DOTNET_VERSION: '10.0.x'
-  PROJECT_PATH: frontend/FoamPilot.Ui/FoamPilot.Ui/FoamPilot.Ui.csproj
-  TFM: net10.0-desktop
+  NODE_VERSION: '22'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/foampilot
 
 jobs:
-  build:
+  # ── Electron installer builds (Windows, macOS, Linux) ──────────────
+  electron:
     strategy:
       matrix:
         include:
           - os: windows-latest
-            rid: win-x64
+            platform: win
           - os: macos-latest
-            rid: osx-x64
-          - os: macos-latest
-            rid: osx-arm64
+            platform: mac
           - os: ubuntu-latest
-            rid: linux-x64
+            platform: linux
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: electron-ui/package-lock.json
 
-      - name: Install Velopack CLI
-        run: dotnet tool install -g vpk
+      - name: Install dependencies
+        working-directory: electron-ui
+        run: npm ci
+
+      - name: Build Electron app
+        working-directory: electron-ui
+        run: npm run build:electron
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-${{ matrix.platform }}
+          path: |
+            electron-ui/dist-electron/*.exe
+            electron-ui/dist-electron/*.dmg
+            electron-ui/dist-electron/*.AppImage
+            electron-ui/dist-electron/latest*.yml
+          if-no-files-found: warn
+
+  # ── Docker image build + push to GHCR ──────────────────────────────
+  docker:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Extract version from tag
         id: version
@@ -45,78 +72,52 @@ jobs:
         run: |
           if [[ "${{ github.ref_type }}" == "tag" ]]; then
             VERSION="${{ github.ref_name }}"
-            VERSION="${VERSION#v}"  # Strip leading 'v'
+            VERSION="${VERSION#v}"
           else
             VERSION="0.0.1-dev"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Building version: $VERSION"
 
-      - name: Restore
-        run: dotnet restore ${{ env.PROJECT_PATH }}
-
-      - name: Publish
-        run: >
-          dotnet publish ${{ env.PROJECT_PATH }}
-          -f ${{ env.TFM }}
-          -r ${{ matrix.rid }}
-          -c Release
-          --self-contained
-          -o ./publish
-          -p:Version=${{ steps.version.outputs.version }}
-
-      # ── Code signing placeholder ──
-      # Uncomment and configure when you have an OV certificate:
-      #
-      # - name: Sign binaries (Windows)
-      #   if: matrix.rid == 'win-x64'
-      #   run: |
-      #     # Option A: SignTool with USB token / cloud HSM
-      #     # signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /sha1 ${{ secrets.CERT_THUMBPRINT }} ./publish/FoamPilot.Ui.exe
-      #     #
-      #     # Option B: SSL.com eSigner (cloud signing)
-      #     # vpk sign --signTool esigner --esignerUsername ${{ secrets.ESIGNER_USER }} --esignerPassword ${{ secrets.ESIGNER_PASS }} --esignerTotp ${{ secrets.ESIGNER_TOTP }}
-
-      - name: Velopack Pack
-        run: >
-          vpk pack
-          --packId FoamPilot
-          --packVersion ${{ steps.version.outputs.version }}
-          --packDir ./publish
-          --outputDir ./releases
-          --mainExe FoamPilot.Ui.exe
-
-      - name: Upload release artifacts
-        uses: actions/upload-artifact@v4
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
         with:
-          name: release-${{ matrix.rid }}
-          path: ./releases/*
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.version.outputs.version }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+          labels: |
+            org.opencontainers.image.version=${{ steps.version.outputs.version }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.description=FoamPilot OpenFOAM backend
+
+  # ── Create GitHub Release ──────────────────────────────────────────
   release:
-    needs: build
+    needs: [electron, docker]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Download all artifacts
+      - name: Download Electron artifacts
         uses: actions/download-artifact@v4
         with:
-          path: ./all-releases
+          path: ./artifacts
 
-      - name: Merge release files
+      - name: Collect release files
         shell: bash
         run: |
           mkdir -p ./releases
-          for dir in ./all-releases/release-*/; do
-            rid=$(basename "$dir" | sed 's/release-//')
-            for file in "$dir"*; do
-              base=$(basename "$file")
-              # Prefix files with RID to avoid name collisions
-              cp "$file" "./releases/${rid}-${base}"
-            done
-          done
+          find ./artifacts -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.AppImage" -o -name "latest*.yml" \) -exec cp {} ./releases/ \;
           ls -la ./releases/
 
       - name: Create GitHub Release

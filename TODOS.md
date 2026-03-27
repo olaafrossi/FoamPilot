@@ -1,11 +1,6 @@
 # TODOS
 
-## Tier 2 Validation Rules
-**Priority:** High | **Effort:** human: ~3 days / CC: ~1 hour
-**What:** Implement patch name matching (parse `constant/polyMesh/boundary` after meshing, compare against 0/ boundary conditions) and solver-field compatibility table.
-**Why:** Tier 1 catches syntax errors; Tier 2 catches the semantic errors that actually waste students' time — boundary conditions referencing non-existent patches, and solver/field mismatches.
-**Context:** Deferred from the wizard PR because the OpenFOAM boundary file parsing needs careful design. Boundary file format varies across OpenFOAM versions. Start by instrumenting which validation failures students hit with Tier 1 to prioritize which Tier 2 rules matter most.
-**Depends on:** Pipeline engine must ship first. Tier 2 validates against state that Tier 1 creates.
+## Deferred
 
 ## DictEditor Refactor to Reusable UserControl
 **Priority:** Medium | **Effort:** human: ~1 week / CC: ~30 min
@@ -62,3 +57,12 @@
 **Cons:** Research-heavy. Options: (1) LLM with geometry context (describe the STL features in text, ask for mesh settings), (2) rule-based geometry analysis (curvature, feature size detection), (3) trained model on OpenFOAM mesh quality outcomes.
 **Context:** Deferred from the wizard-first rearchitecture (CEO review 2026-03-26). Needs real user feedback on where bounding-box auto-config fails before investing in AI. Start by instrumenting which custom STL uploads produce bad meshes and why.
 **Depends on:** STL upload + auto-config generation must ship first. Need data on failure modes.
+
+### Web Worker for Streamline Computation
+**What:** Offload `traceStreamlines()` from `streamlines.ts` to a Web Worker so the UI doesn't freeze during RK4 integration on large meshes.
+**Why:** Main-thread tracing takes ~100-500ms on typical meshes (100K triangles). On larger meshes (500K+), this could cause noticeable UI freezes.
+**Pros:** Zero-freeze streamline computation, better UX on heavy cases.
+**Cons:** Requires Vite worker bundling setup (`import MyWorker from './worker?worker'`), ~20min CC effort.
+**Context:** The `traceStreamlines()` function in `electron-ui/src/lib/streamlines.ts` is pure math with zero DOM dependencies — perfect worker candidate. The current implementation uses `useMemo` gated on the streamlines toggle. To convert: create a worker that imports `traceStreamlines`, post message with vertices/faces/vectors/seeds, return polylines.
+**Depends on:** Streamline rendering implementation (animated TubeGeometry).
+**Added:** 2026-03-27

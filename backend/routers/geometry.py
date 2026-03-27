@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import os
 import re
 import shutil
@@ -9,16 +10,25 @@ import struct
 import subprocess
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 
 from services.config_generator import (
     generate_block_mesh_dict,
     generate_decompose_par_dict,
     generate_snappy_hex_mesh_dict,
     generate_surface_feature_extract_dict,
+    scale_stl,
     stl_bounds,
 )
 from services.foam_runner import FOAM_CORES, FOAM_RUN, FOAM_TEMPLATES, validate_case_path
+from services.field_parser import (
+    discover_available_fields,
+    discover_time_directories,
+    extract_boundary_field_data,
+    resolve_time,
+)
+from services.foam_runner import list_jobs
 from services.parsers import AeroResults, MeshQuality, parse_check_mesh, parse_force_coeffs
 
 router = APIRouter(prefix="/cases", tags=["geometry"])
@@ -32,8 +42,17 @@ _ALLOWED_EXTENSIONS = {".stl", ".obj"}
 # ---------------------------------------------------------------------------
 
 @router.post("/{name}/upload-geometry")
-async def upload_geometry(name: str, file: UploadFile = File(...)):
-    """Upload an STL/OBJ file, scaffold the case, and auto-generate mesh dicts."""
+async def upload_geometry(
+    name: str,
+    file: UploadFile = File(...),
+    scale: float = Form(1.0),
+):
+    """Upload an STL/OBJ file, scaffold the case, and auto-generate mesh dicts.
+
+    ``scale`` converts geometry coordinates to meters.  Pass 0.001 for
+    millimetres, 0.0254 for inches, etc.  The STL vertices are rewritten
+    on disk so that every downstream tool sees metre-scale geometry.
+    """
 
     # -- Validate case name --
     if not _VALID_CASE_RE.match(name):
@@ -69,6 +88,27 @@ async def upload_geometry(name: str, file: UploadFile = File(...)):
     if src_zero.is_dir() and not dst_zero.exists():
         shutil.copytree(str(src_zero), str(dst_zero))
 
+    # -- Rename template patch references to match uploaded geometry --
+    # The template uses "motorBikeGroup" but snappyHexMesh will create
+    # "{stem}Group" based on the uploaded filename.  Replace in both
+    # 0/ (boundary conditions) and system/ (function objects like forceCoeffs).
+    stl_stem = Path(file.filename).stem  # e.g. "Ahmed" from "Ahmed.stl"
+    new_group = f"{stl_stem}Group"
+    if new_group != "motorBikeGroup":
+        for search_dir in [dst_zero, dst_system]:
+            if not search_dir.is_dir():
+                continue
+            for foam_file_path in search_dir.rglob("*"):
+                if not foam_file_path.is_file() or foam_file_path.name.startswith("."):
+                    continue
+                try:
+                    text = foam_file_path.read_text(encoding="utf-8")
+                    if "motorBikeGroup" in text:
+                        text = text.replace("motorBikeGroup", new_group)
+                        foam_file_path.write_text(text, encoding="utf-8")
+                except (UnicodeDecodeError, OSError):
+                    pass  # skip binary or unreadable files
+
     # Copy constant/ directory (transport/turbulence properties, triSurface/)
     src_const = template_dir / "constant"
     dst_const = case_path / "constant"
@@ -79,10 +119,17 @@ async def upload_geometry(name: str, file: UploadFile = File(...)):
     tri_surface_dir = case_path / "constant" / "triSurface"
     tri_surface_dir.mkdir(parents=True, exist_ok=True)
 
-    # -- Save uploaded geometry file --
+    # -- Save uploaded geometry file (scaled to meters if needed) --
     dest_file = tri_surface_dir / file.filename
     contents = await file.read()
+    if ext == ".stl" and abs(scale - 1.0) > 1e-12:
+        contents = scale_stl(contents, scale)
     dest_file.write_bytes(contents)
+
+    # -- Create .foam file for ParaView (empty marker file) --
+    foam_file = case_path / f"{name}.foam"
+    if not foam_file.exists():
+        foam_file.touch()
 
     # -- Parse STL bounds (only for .stl files) --
     if ext == ".stl":
@@ -207,4 +254,102 @@ async def case_results(name: str):
         "iterations": result.iterations,
         "wall_time_seconds": result.wall_time_seconds,
         "converged": result.converged,
+    }
+
+
+# ---------------------------------------------------------------------------
+# GET /cases/{name}/geometry-file
+# ---------------------------------------------------------------------------
+
+@router.get("/{name}/geometry-file")
+async def serve_geometry_file(name: str):
+    """Serve the geometry file (STL/OBJ) from constant/triSurface/.
+
+    Automatically decompresses .gz files if needed.
+    """
+    case_path = Path(validate_case_path(name))
+    tri_dir = case_path / "constant" / "triSurface"
+    if not tri_dir.is_dir():
+        raise HTTPException(status_code=404, detail="No triSurface directory")
+
+    # Search for geometry files in priority order
+    for ext in ("*.stl", "*.obj"):
+        matches = [f for f in tri_dir.glob(ext) if not f.name.endswith(".gz")]
+        if matches:
+            geo_file = matches[0]
+            media = "model/stl" if geo_file.suffix == ".stl" else "text/plain"
+            return FileResponse(str(geo_file), media_type=media, filename=geo_file.name)
+
+    # Try .gz compressed files
+    for ext in ("*.stl.gz", "*.obj.gz"):
+        matches = list(tri_dir.glob(ext))
+        if matches:
+            gz_file = matches[0]
+            # Decompress to sibling path (strip .gz)
+            decompressed = gz_file.with_suffix("")  # e.g. motorBike.obj.gz -> motorBike.obj
+            if not decompressed.exists():
+                with gzip.open(gz_file, "rb") as f_in:
+                    decompressed.write_bytes(f_in.read())
+            media = "model/stl" if decompressed.suffix == ".stl" else "text/plain"
+            return FileResponse(str(decompressed), media_type=media, filename=decompressed.name)
+
+    raise HTTPException(status_code=404, detail="No geometry file found in triSurface/")
+
+
+# ---------------------------------------------------------------------------
+# GET /cases/{name}/field-data
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{name}/field-data")
+async def field_data(name: str, field: str = "p", time: str = "latest"):
+    """Serve mesh geometry + field values for 3D visualization.
+
+    Returns boundary faces only (surface mesh) with interpolated field values
+    at vertices.  For vector fields (e.g. U) the magnitude is returned in
+    ``values`` and the raw vectors in ``vectors``.
+    """
+    case_path = Path(validate_case_path(name))
+    if not case_path.is_dir():
+        raise HTTPException(status_code=404, detail=f"Case '{name}' not found")
+
+    # Resolve the requested time directory
+    all_times = discover_time_directories(case_path)
+    try:
+        resolved_time = resolve_time(case_path, time)
+    except FileNotFoundError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No time directories found in case '{name}'. "
+            f"Has the solver run and completed reconstructPar? "
+            f"Case path: {case_path}. Dirs found: {[d.name for d in case_path.iterdir() if d.is_dir()][:20]}",
+        )
+
+    # Check that the requested field exists
+    available_fields = discover_available_fields(case_path, resolved_time)
+    if field not in available_fields:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Field '{field}' not found in time directory '{resolved_time}'. "
+            f"Available fields: {available_fields}. All time dirs: {all_times}",
+        )
+
+    # Extract boundary mesh + field data
+    try:
+        data = extract_boundary_field_data(case_path, resolved_time, field)
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    # Check for active jobs on this case
+    warning = None
+    for job in list_jobs():
+        if job.case_name == name and job.status in ("queued", "running"):
+            warning = "Simulation still running \u2014 results may be incomplete"
+            break
+
+    return {
+        **data,
+        "available_fields": available_fields,
+        "available_times": discover_time_directories(case_path),
+        "warning": warning,
     }

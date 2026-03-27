@@ -126,3 +126,21 @@ class TemplateInfo(BaseModel):
     learning_objectives: list[str] = []
     fields: list[str] = []
     steps: dict[str, TemplateStepInfo] = {}
+
+
+# ── Field data (3D visualization) ─────────────────────────────────
+
+
+class FieldDataResponse(BaseModel):
+    vertices: list[list[float]]
+    faces: list[list[int]]
+    values: list[float]
+    vectors: list[list[float]] | None = None
+    min: float
+    max: float
+    field: str
+    time: str
+    patches: list[dict]
+    available_fields: list[str]
+    available_times: list[str]
+    warning: str | None = None
