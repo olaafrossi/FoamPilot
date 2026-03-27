@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import FoamEditor from "../components/FoamEditor";
 import MeshPreview from "../components/MeshPreview";
+import LogViewer from "../components/LogViewer";
 import {
   readFile,
   writeFile,
@@ -11,6 +12,7 @@ import {
   cancelJob,
   getConfig,
 } from "../api";
+import { useStopwatch, formatElapsed } from "../hooks/useStopwatch";
 import type { MeshQuality } from "../types";
 
 interface StepProps {
@@ -57,8 +59,8 @@ export default function MeshStep({
   const [error, setError] = useState<string | null>(null);
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [meshDone, setMeshDone] = useState(false);
-  const logEndRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const stopwatch = useStopwatch();
 
   // Load all files on mount
   useEffect(() => {
@@ -79,11 +81,6 @@ export default function MeshStep({
       setLoading(false);
     });
   }, [caseName]);
-
-  // Auto-scroll log
-  useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [logLines]);
 
   const saveFile = useCallback(
     async (key: string) => {
@@ -127,6 +124,7 @@ export default function MeshStep({
       }
     }
 
+    stopwatch.start();
     const cores = getConfig().cores;
 
     const commands = [
@@ -160,6 +158,7 @@ export default function MeshStep({
             clearInterval(poll);
             setRunning(false);
             setCurrentJobId(null);
+            stopwatch.stop();
             ws.close();
             wsRef.current = null;
 
@@ -186,6 +185,7 @@ export default function MeshStep({
     } catch (e: unknown) {
       setRunning(false);
       setCurrentJobId(null);
+      stopwatch.stop();
       setError(
         e instanceof Error ? e.message : "Failed to start mesh generation",
       );
@@ -202,6 +202,7 @@ export default function MeshStep({
     }
     setRunning(false);
     setCurrentJobId(null);
+    stopwatch.stop();
     setError("Mesh generation cancelled.");
   };
 
@@ -286,18 +287,20 @@ export default function MeshStep({
             Stop
           </button>
         )}
+        {(running || stopwatch.elapsed > 0) && (
+          <span className="text-[#858585] text-[13px] font-mono tabular-nums flex items-center gap-1.5">
+            {running && (
+              <span className="inline-block w-2 h-2 rounded-full bg-[#89d185] animate-pulse" />
+            )}
+            {formatElapsed(stopwatch.elapsed)}
+          </span>
+        )}
       </div>
 
       {/* Log output */}
       {logLines.length > 0 && (
-        <div
-          className="mt-4 border border-[#474747] p-3 h-64 overflow-y-auto font-mono text-[13px] text-[#cccccc]"
-          style={{ background: "var(--bg-editor)", borderRadius: 0 }}
-        >
-          {logLines.map((line, i) => (
-            <div key={i}>{line}</div>
-          ))}
-          <div ref={logEndRef} />
+        <div className="mt-4">
+          <LogViewer lines={logLines} />
         </div>
       )}
 
