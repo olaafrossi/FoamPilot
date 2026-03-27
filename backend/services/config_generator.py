@@ -138,6 +138,80 @@ def _parse_ascii_stl(text: str) -> BoundingBox:
 
 
 # ---------------------------------------------------------------------------
+# STL scaling — convert geometry to meters before meshing
+# ---------------------------------------------------------------------------
+
+# Common CAD export units → meters conversion factors
+UNIT_SCALES: dict[str, float] = {
+    "m": 1.0,
+    "mm": 0.001,
+    "cm": 0.01,
+    "in": 0.0254,
+    "ft": 0.3048,
+}
+
+
+def scale_stl(raw: bytes, factor: float) -> bytes:
+    """Scale all vertex coordinates in an STL file by a uniform factor.
+
+    Handles both binary and ASCII formats.  Normals are left unchanged
+    (they are direction vectors, not positions).
+    """
+    if abs(factor - 1.0) < 1e-12:
+        return raw
+    if _is_ascii_stl(raw):
+        return _scale_ascii_stl(raw, factor)
+    return _scale_binary_stl(raw, factor)
+
+
+def _scale_binary_stl(raw: bytes, factor: float) -> bytes:
+    """Scale vertex positions in a binary STL (leave normals untouched)."""
+    if len(raw) < 84:
+        raise ValueError("File too small to be a valid binary STL")
+
+    num_triangles = struct.unpack_from("<I", raw, 80)[0]
+    out = bytearray(raw)
+    offset = 84
+
+    for _ in range(num_triangles):
+        if offset + 50 > len(out):
+            break
+        # Skip normal (3 floats = 12 bytes), scale 3 vertices (9 floats)
+        for i in range(9):
+            pos = offset + 12 + i * 4
+            val = struct.unpack_from("<f", out, pos)[0]
+            struct.pack_into("<f", out, pos, val * factor)
+        offset += 50
+
+    return bytes(out)
+
+
+def _scale_ascii_stl(raw: bytes, factor: float) -> bytes:
+    """Scale vertex positions in an ASCII STL."""
+    import re as _re
+
+    text = raw.decode("utf-8", errors="replace")
+
+    _vertex_re = _re.compile(
+        r"(vertex\s+)"
+        r"([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)"
+        r"(\s+)"
+        r"([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)"
+        r"(\s+)"
+        r"([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)"
+    )
+
+    def _repl(m: _re.Match) -> str:
+        x = float(m.group(2)) * factor
+        y = float(m.group(4)) * factor
+        z = float(m.group(6)) * factor
+        return f"{m.group(1)}{x:e}{m.group(3)}{y:e}{m.group(5)}{z:e}"
+
+    scaled = _vertex_re.sub(_repl, text)
+    return scaled.encode("utf-8")
+
+
+# ---------------------------------------------------------------------------
 # OpenFOAM header
 # ---------------------------------------------------------------------------
 

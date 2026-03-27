@@ -10,7 +10,7 @@ import struct
 import subprocess
 from pathlib import Path
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from services.config_generator import (
@@ -18,6 +18,7 @@ from services.config_generator import (
     generate_decompose_par_dict,
     generate_snappy_hex_mesh_dict,
     generate_surface_feature_extract_dict,
+    scale_stl,
     stl_bounds,
 )
 from services.foam_runner import FOAM_CORES, FOAM_RUN, FOAM_TEMPLATES, validate_case_path
@@ -41,8 +42,17 @@ _ALLOWED_EXTENSIONS = {".stl", ".obj"}
 # ---------------------------------------------------------------------------
 
 @router.post("/{name}/upload-geometry")
-async def upload_geometry(name: str, file: UploadFile = File(...)):
-    """Upload an STL/OBJ file, scaffold the case, and auto-generate mesh dicts."""
+async def upload_geometry(
+    name: str,
+    file: UploadFile = File(...),
+    scale: float = Form(1.0),
+):
+    """Upload an STL/OBJ file, scaffold the case, and auto-generate mesh dicts.
+
+    ``scale`` converts geometry coordinates to meters.  Pass 0.001 for
+    millimetres, 0.0254 for inches, etc.  The STL vertices are rewritten
+    on disk so that every downstream tool sees metre-scale geometry.
+    """
 
     # -- Validate case name --
     if not _VALID_CASE_RE.match(name):
@@ -109,9 +119,11 @@ async def upload_geometry(name: str, file: UploadFile = File(...)):
     tri_surface_dir = case_path / "constant" / "triSurface"
     tri_surface_dir.mkdir(parents=True, exist_ok=True)
 
-    # -- Save uploaded geometry file --
+    # -- Save uploaded geometry file (scaled to meters if needed) --
     dest_file = tri_surface_dir / file.filename
     contents = await file.read()
+    if ext == ".stl" and abs(scale - 1.0) > 1e-12:
+        contents = scale_stl(contents, scale)
     dest_file.write_bytes(contents)
 
     # -- Create .foam file for ParaView (empty marker file) --

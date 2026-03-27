@@ -86,13 +86,18 @@ export async function getResults(caseName: string): Promise<AeroResults> {
   return res.json();
 }
 
-export async function uploadGeometry(caseName: string, file: File): Promise<{
+export async function uploadGeometry(
+  caseName: string,
+  file: File,
+  scale: number = 1.0,
+): Promise<{
   filename: string;
   triangles: number;
   bounds: { min: number[]; max: number[] };
 }> {
   const formData = new FormData();
   formData.append("file", file);
+  formData.append("scale", scale.toString());
   const res = await fetch(api(`/cases/${caseName}/upload-geometry`), {
     method: "POST",
     body: formData,
