@@ -276,10 +276,16 @@ async def field_data(name: str, field: str = "p", time: str = "latest"):
         raise HTTPException(status_code=404, detail=f"Case '{name}' not found")
 
     # Resolve the requested time directory
+    all_times = discover_time_directories(case_path)
     try:
         resolved_time = resolve_time(case_path, time)
     except FileNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+        raise HTTPException(
+            status_code=404,
+            detail=f"No time directories found in case '{name}'. "
+            f"Has the solver run and completed reconstructPar? "
+            f"Case path: {case_path}. Dirs found: {[d.name for d in case_path.iterdir() if d.is_dir()][:20]}",
+        )
 
     # Check that the requested field exists
     available_fields = discover_available_fields(case_path, resolved_time)
@@ -287,7 +293,7 @@ async def field_data(name: str, field: str = "p", time: str = "latest"):
         raise HTTPException(
             status_code=404,
             detail=f"Field '{field}' not found in time directory '{resolved_time}'. "
-            f"Available fields: {available_fields}",
+            f"Available fields: {available_fields}. All time dirs: {all_times}",
         )
 
     # Extract boundary mesh + field data
