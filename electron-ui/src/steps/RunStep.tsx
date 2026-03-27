@@ -249,7 +249,7 @@ export default function RunStep({
   }
 
   return (
-    <div>
+    <div className="flex flex-col" style={{ minHeight: "100%" }}>
       <h2 style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 24, marginBottom: 4, color: "var(--fg)" }}>Run Simulation</h2>
       <p className="text-[var(--fg-muted)] text-[13px] mb-6">
         Start the solver, monitor convergence, and track progress in real
@@ -351,7 +351,9 @@ export default function RunStep({
 
       {/* Log output */}
       {logLines.length > 0 && (
-        <LogViewer lines={logLines} />
+        <div className="flex-1 min-h-[200px] mt-4">
+          <LogViewer lines={logLines} className="h-full" />
+        </div>
       )}
 
       {/* Navigation */}

@@ -3,6 +3,7 @@ import { useEffect, useRef, useCallback, useState } from "react";
 interface LogViewerProps {
   lines: string[];
   height?: string;
+  className?: string;
 }
 
 // Patterns for syntax coloring OpenFOAM log output
@@ -80,14 +81,17 @@ function colorLine(line: string): React.ReactNode {
   return line;
 }
 
-export default function LogViewer({ lines, height = "256px" }: LogViewerProps) {
+export default function LogViewer({ lines, height, className }: LogViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
+  const autoScrollingRef = useRef(false);
   const [showTail, setShowTail] = useState(false);
 
   // Detect whether user has scrolled away from bottom
   const handleScroll = useCallback(() => {
+    // Ignore scroll events triggered by programmatic scrolling
+    if (autoScrollingRef.current) return;
     const el = containerRef.current;
     if (!el) return;
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
@@ -99,13 +103,17 @@ export default function LogViewer({ lines, height = "256px" }: LogViewerProps) {
   const handleTail = useCallback(() => {
     userScrolledRef.current = false;
     setShowTail(false);
+    autoScrollingRef.current = true;
     endRef.current?.scrollIntoView({ behavior: "smooth" });
+    setTimeout(() => { autoScrollingRef.current = false; }, 400);
   }, []);
 
   // Auto-scroll only when user hasn't scrolled up
   useEffect(() => {
     if (!userScrolledRef.current) {
+      autoScrollingRef.current = true;
       endRef.current?.scrollIntoView({ behavior: "smooth" });
+      setTimeout(() => { autoScrollingRef.current = false; }, 400);
     }
   }, [lines]);
 
@@ -114,7 +122,7 @@ export default function LogViewer({ lines, height = "256px" }: LogViewerProps) {
     : "3ch";
 
   return (
-    <div className="relative border border-[#474747]" style={{ height }}>
+    <div className={`relative border border-[#474747] ${className ?? ""}`} style={height ? { height } : undefined}>
       <div
         ref={containerRef}
         onScroll={handleScroll}
