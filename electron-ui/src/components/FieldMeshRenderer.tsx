@@ -7,6 +7,7 @@ import { mapScalarToColor } from "../lib/colormap";
 import type { ColorMapName } from "../lib/colormap";
 import type { FieldData } from "../types";
 import StreamlineRenderer from "./StreamlineRenderer";
+import type { MeshTransform } from "./StreamlineRenderer";
 
 // ---------------------------------------------------------------------------
 // Patch visibility helpers (exported for testing)
@@ -80,12 +81,6 @@ interface FieldMeshProps {
   patchVisibility: Record<string, boolean>;
   onLoaded?: () => void;
   onError?: (error: string) => void;
-}
-
-/** Shared transform parameters so streamlines use the same coordinate system. */
-export interface MeshTransform {
-  center: [number, number, number];
-  scale: number;
 }
 
 function FieldMesh({

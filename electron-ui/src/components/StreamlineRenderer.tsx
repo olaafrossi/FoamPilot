@@ -15,7 +15,15 @@ import { traceStreamlines, computeMagnitude } from "../lib/streamlines";
 import { mapScalarToColor } from "../lib/colormap";
 import type { ColorMapName } from "../lib/colormap";
 import type { FieldData } from "../types";
-import type { MeshTransform } from "./FieldMeshRenderer";
+
+// ---------------------------------------------------------------------------
+// Public type — also used by FieldMeshRenderer
+// ---------------------------------------------------------------------------
+
+export interface MeshTransform {
+  center: [number, number, number];
+  scale: number;
+}
 
 // ---------------------------------------------------------------------------
 // Props
@@ -67,10 +75,10 @@ const DASH_FRAGMENT = /* glsl */ `
 `;
 
 // ---------------------------------------------------------------------------
-// Build tube geometry from a single polyline
+// Build tube geometry from a single polyline (exported for testing)
 // ---------------------------------------------------------------------------
 
-function buildTubeFromPolyline(
+export function buildTubeFromPolyline(
   points: number[][],
   radius: number,
   segments: number,
@@ -105,6 +113,7 @@ function buildTubeFromPolyline(
   const binormal = new THREE.Vector3();
   const up = new THREE.Vector3(0, 0, 1);
   const pos = new THREE.Vector3();
+  const arbAxis = new THREE.Vector3(1, 0, 0);
 
   for (let i = 0; i < numPoints; i++) {
     const p = points[i];
@@ -130,7 +139,7 @@ function buildTubeFromPolyline(
     binormal.crossVectors(tangent, up);
     if (binormal.lengthSq() < 1e-6) {
       // Tangent is parallel to up, pick arbitrary perpendicular
-      binormal.crossVectors(tangent, new THREE.Vector3(1, 0, 0));
+      binormal.crossVectors(tangent, arbAxis);
     }
     binormal.normalize();
     normal.crossVectors(binormal, tangent).normalize();
@@ -169,6 +178,22 @@ function buildTubeFromPolyline(
 }
 
 // ---------------------------------------------------------------------------
+// Iterative min/max — safe for arrays of any size (no stack overflow)
+// ---------------------------------------------------------------------------
+
+export function iterativeMinMax(arr: number[]): { min: number; max: number } {
+  if (arr.length === 0) return { min: 0, max: 0 };
+  let min = arr[0];
+  let max = arr[0];
+  for (let i = 1; i < arr.length; i++) {
+    const v = arr[i];
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+  return { min, max };
+}
+
+// ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
 
@@ -179,7 +204,12 @@ export default function StreamlineRenderer({
   meshTransform,
   tubeRadius = 0.012,
 }: StreamlineRendererProps) {
-  const materialRef = useRef<THREE.ShaderMaterial>(null);
+  const meshRef = useRef<THREE.Mesh>(null);
+
+  // Stable fingerprint for useMemo — avoids recomputation when object
+  // references change but the underlying data hasn't.
+  const dataKey = `${fieldData.field}:${fieldData.time}:${seeds.length}:${colormap}`;
+  const transformKey = `${meshTransform.center[0]}:${meshTransform.center[1]}:${meshTransform.center[2]}:${meshTransform.scale}`;
 
   // Trace streamlines and build merged tube geometry (memoized)
   const geometry = useMemo(() => {
@@ -196,10 +226,9 @@ export default function StreamlineRenderer({
 
     if (polylines.length === 0) return null;
 
-    // Compute velocity magnitudes for coloring
+    // Compute velocity magnitudes for coloring — iterative to avoid stack overflow
     const mags = computeMagnitude(fieldData.vectors);
-    const magMin = Math.min(...mags);
-    const magMax = Math.max(...mags);
+    const { min: magMin, max: magMax } = iterativeMinMax(mags);
 
     // Build tube geometry for each streamline, then merge
     const allPositions: Float32Array[] = [];
@@ -216,25 +245,17 @@ export default function StreamlineRenderer({
       const tube = buildTubeFromPolyline(polyline, tubeRadius, radialSegments, meshTransform);
       if (!tube) continue;
 
-      // Color based on average velocity magnitude along the streamline
-      // Use the midpoint for a representative color
+      // Color based on velocity magnitude at the streamline midpoint.
+      // The polyline was traced through the interpolated velocity field,
+      // so we can estimate the velocity from the step direction directly.
       const midIdx = Math.floor(polyline.length / 2);
-      const midPt = polyline[midIdx];
-      // Find nearest vertex for color lookup
-      let nearestDist = Infinity;
-      let nearestIdx = 0;
-      for (let i = 0; i < fieldData.vertices.length; i++) {
-        const v = fieldData.vertices[i];
-        const dx = v[0] - midPt[0];
-        const dy = v[1] - midPt[1];
-        const dz = v[2] - midPt[2];
-        const d = dx * dx + dy * dy + dz * dz;
-        if (d < nearestDist) {
-          nearestDist = d;
-          nearestIdx = i;
-        }
-      }
-      const mag = mags[nearestIdx];
+      const p0 = polyline[Math.max(0, midIdx - 1)];
+      const p1 = polyline[Math.min(polyline.length - 1, midIdx + 1)];
+      const vx = p1[0] - p0[0];
+      const vy = p1[1] - p0[1];
+      const vz = p1[2] - p0[2];
+      const mag = Math.sqrt(vx * vx + vy * vy + vz * vz);
+      // Normalize against the field's velocity range
       const rgb = mapScalarToColor(mag, magMin, magMax, colormap);
 
       // Create color array for all vertices of this tube
@@ -292,34 +313,33 @@ export default function StreamlineRenderer({
     geo.computeVertexNormals();
 
     return geo;
-  }, [fieldData, seeds, colormap, meshTransform, tubeRadius]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataKey, transformKey, tubeRadius]);
+
+  // Create ShaderMaterial imperatively — avoids R3F reconciler loop
+  // where declarative <shaderMaterial uniforms={...}> causes infinite
+  // prop-diffing against Three.js material internals.
+  const material = useMemo(() => new THREE.ShaderMaterial({
+    vertexShader: DASH_VERTEX,
+    fragmentShader: DASH_FRAGMENT,
+    transparent: true,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    uniforms: {
+      dashSize: { value: 0.15 },
+      gapSize: { value: 0.1 },
+      time: { value: 0 },
+      speed: { value: 0.8 },
+      opacity: { value: 0.85 },
+    },
+  }), []);
 
   // Animate the dash offset
   useFrame((_, delta) => {
-    if (materialRef.current) {
-      materialRef.current.uniforms.time.value += delta;
-    }
+    material.uniforms.time.value += delta;
   });
 
   if (!geometry) return null;
 
-  return (
-    <mesh geometry={geometry}>
-      <shaderMaterial
-        ref={materialRef}
-        vertexShader={DASH_VERTEX}
-        fragmentShader={DASH_FRAGMENT}
-        transparent
-        side={THREE.DoubleSide}
-        depthWrite={false}
-        uniforms={{
-          dashSize: { value: 0.15 },
-          gapSize: { value: 0.1 },
-          time: { value: 0 },
-          speed: { value: 0.8 },
-          opacity: { value: 0.85 },
-        }}
-      />
-    </mesh>
-  );
+  return <mesh ref={meshRef} geometry={geometry} material={material} />;
 }
