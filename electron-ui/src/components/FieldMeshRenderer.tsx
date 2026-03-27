@@ -182,11 +182,11 @@ export default function FieldMeshRenderer({
         className="flex items-center justify-center"
         style={{
           height: 400,
-          background: "#1e1e1e",
-          border: "1px solid #474747",
+          background: "var(--bg-editor)",
+          border: "1px solid var(--border)",
         }}
       >
-        <p style={{ color: "#858585", fontSize: 13 }}>
+        <p style={{ color: "var(--fg-muted)", fontSize: 13 }}>
           No field data available
         </p>
       </div>
@@ -199,7 +199,7 @@ export default function FieldMeshRenderer({
         position: "relative",
         height: 400,
         background: "#1a1a2e",
-        border: "1px solid #474747",
+        border: "1px solid var(--border)",
       }}
     >
       {/* Warning banner */}
@@ -212,7 +212,7 @@ export default function FieldMeshRenderer({
             right: 0,
             zIndex: 10,
             background: "rgba(180, 160, 60, 0.9)",
-            color: "#1e1e1e",
+            color: "var(--bg-editor)",
             fontSize: 12,
             padding: "4px 8px",
             textAlign: "center",
@@ -253,9 +253,9 @@ export default function FieldMeshRenderer({
           top: fieldData.warning ? 32 : 8,
           right: 8,
           background: "rgba(30,30,30,0.8)",
-          border: "1px solid #474747",
+          border: "1px solid var(--border)",
           borderRadius: 2,
-          color: "#cccccc",
+          color: "var(--fg)",
           padding: "4px 6px",
           cursor: "pointer",
           display: "flex",

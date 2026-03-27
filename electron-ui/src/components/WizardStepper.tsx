@@ -1,3 +1,5 @@
+import { Check } from "lucide-react";
+
 interface Step {
   name: string;
   number: number;
@@ -36,7 +38,7 @@ export default function WizardStepper({ currentStep, completedSteps }: Props) {
         let color = "var(--fg-muted)";
         let fontWeight: number = 400;
         if (isCurrent) {
-          color = "#ffffff";
+          color = "var(--accent)";
           fontWeight = 600;
         } else if (isCompleted) {
           color = "var(--success)";
@@ -44,6 +46,9 @@ export default function WizardStepper({ currentStep, completedSteps }: Props) {
 
         return (
           <span key={step.number} className="flex items-center">
+            {isCompleted && (
+              <Check size={12} style={{ color: "var(--success)", marginRight: 2 }} />
+            )}
             <span style={{ color, fontWeight }}>{step.name}</span>
             {i < STEPS.length - 1 && (
               <span style={{ color: "var(--fg-muted)", margin: "0 6px" }}>

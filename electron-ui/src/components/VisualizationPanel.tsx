@@ -53,13 +53,13 @@ function ColorLegend({
           width: 16,
           height: "100%",
           background: `linear-gradient(to bottom, ${stops})`,
-          border: "1px solid #474747",
+          border: "1px solid var(--border)",
           borderRadius: 1,
         }}
       />
-      <div className="flex flex-col justify-between" style={{ fontSize: 11, color: "#cccccc" }}>
+      <div className="flex flex-col justify-between" style={{ fontSize: 11, color: "var(--fg)" }}>
         <span>{max.toPrecision(4)} {unit}</span>
-        <span style={{ color: "#858585" }}>{field}</span>
+        <span style={{ color: "var(--fg-muted)" }}>{field}</span>
         <span>{min.toPrecision(4)} {unit}</span>
       </div>
     </div>
@@ -127,7 +127,7 @@ export default function VisualizationPanel({ caseName }: VisualizationPanelProps
   return (
     <div>
       <h3
-        style={{ fontSize: 14, fontWeight: 600, color: "#ffffff", marginBottom: 12 }}
+        style={{ fontSize: 14, fontWeight: 600, color: "var(--fg)", marginBottom: 12 }}
       >
         Flow Visualization
       </h3>
@@ -135,18 +135,18 @@ export default function VisualizationPanel({ caseName }: VisualizationPanelProps
       {/* Controls bar */}
       <div
         className="flex flex-wrap items-center gap-4 mb-3 p-3"
-        style={{ background: "#252526", border: "1px solid #474747" }}
+        style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
       >
         {/* Field selector */}
         <div className="flex items-center gap-2">
-          <Layers size={14} className="text-[#858585]" />
-          <label style={{ fontSize: 11, color: "#858585", fontWeight: 600, textTransform: "uppercase" }}>
+          <Layers size={14} className="text-[var(--fg-muted)]" />
+          <label style={{ fontSize: 11, color: "var(--fg-muted)", fontWeight: 600, textTransform: "uppercase" }}>
             Field
           </label>
           <select
             value={selectedField}
             onChange={(e) => handleFieldChange(e.target.value)}
-            className="bg-[#3c3c3c] text-[#cccccc] border border-[#474747] px-2 py-1 text-[13px]"
+            className="bg-[var(--bg-input)] text-[var(--fg)] border border-[var(--border)] px-2 py-1 text-[13px]"
             style={{ borderRadius: 2 }}
           >
             {availableFields.length > 0
@@ -161,13 +161,13 @@ export default function VisualizationPanel({ caseName }: VisualizationPanelProps
         {/* Time selector */}
         {availableTimes.length > 1 && (
           <div className="flex items-center gap-2">
-            <label style={{ fontSize: 11, color: "#858585", fontWeight: 600, textTransform: "uppercase" }}>
+            <label style={{ fontSize: 11, color: "var(--fg-muted)", fontWeight: 600, textTransform: "uppercase" }}>
               Time
             </label>
             <select
               value={selectedTime}
               onChange={(e) => handleTimeChange(e.target.value)}
-              className="bg-[#3c3c3c] text-[#cccccc] border border-[#474747] px-2 py-1 text-[13px]"
+              className="bg-[var(--bg-input)] text-[var(--fg)] border border-[var(--border)] px-2 py-1 text-[13px]"
               style={{ borderRadius: 2 }}
             >
               <option value="latest">Latest</option>
@@ -180,14 +180,14 @@ export default function VisualizationPanel({ caseName }: VisualizationPanelProps
 
         {/* Colormap selector */}
         <div className="flex items-center gap-2">
-          <Palette size={14} className="text-[#858585]" />
-          <label style={{ fontSize: 11, color: "#858585", fontWeight: 600, textTransform: "uppercase" }}>
+          <Palette size={14} className="text-[var(--fg-muted)]" />
+          <label style={{ fontSize: 11, color: "var(--fg-muted)", fontWeight: 600, textTransform: "uppercase" }}>
             Colors
           </label>
           <select
             value={colormap}
             onChange={(e) => setColormap(e.target.value as ColorMapName)}
-            className="bg-[#3c3c3c] text-[#cccccc] border border-[#474747] px-2 py-1 text-[13px]"
+            className="bg-[var(--bg-input)] text-[var(--fg)] border border-[var(--border)] px-2 py-1 text-[13px]"
             style={{ borderRadius: 2 }}
           >
             {COLORMAPS.map((cm) => (
@@ -199,11 +199,11 @@ export default function VisualizationPanel({ caseName }: VisualizationPanelProps
         {/* Opacity slider */}
         <div className="flex items-center gap-2">
           {opacity < 1 ? (
-            <EyeOff size={14} className="text-[#858585]" />
+            <EyeOff size={14} className="text-[var(--fg-muted)]" />
           ) : (
-            <Eye size={14} className="text-[#858585]" />
+            <Eye size={14} className="text-[var(--fg-muted)]" />
           )}
-          <label style={{ fontSize: 11, color: "#858585", fontWeight: 600, textTransform: "uppercase" }}>
+          <label style={{ fontSize: 11, color: "var(--fg-muted)", fontWeight: 600, textTransform: "uppercase" }}>
             Opacity
           </label>
           <input
@@ -213,9 +213,9 @@ export default function VisualizationPanel({ caseName }: VisualizationPanelProps
             step={0.05}
             value={opacity}
             onChange={(e) => setOpacity(Number(e.target.value))}
-            style={{ width: 80, accentColor: "#0078d4" }}
+            style={{ width: 80, accentColor: "var(--accent)" }}
           />
-          <span style={{ fontSize: 11, color: "#858585", minWidth: 28 }}>
+          <span style={{ fontSize: 11, color: "var(--fg-muted)", minWidth: 28 }}>
             {Math.round(opacity * 100)}%
           </span>
         </div>
@@ -225,8 +225,8 @@ export default function VisualizationPanel({ caseName }: VisualizationPanelProps
           onClick={() => setShowWireframe(!showWireframe)}
           className={`flex items-center gap-1 px-2 py-1 text-[12px] border ${
             showWireframe
-              ? "bg-[#0e639c] border-[#0e639c] text-white"
-              : "bg-transparent border-[#474747] text-[#858585] hover:text-[#cccccc]"
+              ? "bg-[var(--accent-bg)] border-[var(--accent-bg)] text-white"
+              : "bg-transparent border-[var(--border)] text-[var(--fg-muted)] hover:text-[var(--fg)]"
           }`}
           style={{ borderRadius: 2 }}
         >
@@ -239,8 +239,8 @@ export default function VisualizationPanel({ caseName }: VisualizationPanelProps
             onClick={() => setShowStreamlines(!showStreamlines)}
             className={`flex items-center gap-1 px-2 py-1 text-[12px] border ${
               showStreamlines
-                ? "bg-[#0e639c] border-[#0e639c] text-white"
-                : "bg-transparent border-[#474747] text-[#858585] hover:text-[#cccccc]"
+                ? "bg-[var(--accent-bg)] border-[var(--accent-bg)] text-white"
+                : "bg-transparent border-[var(--border)] text-[var(--fg-muted)] hover:text-[var(--fg)]"
             }`}
             style={{ borderRadius: 2 }}
           >
@@ -257,16 +257,16 @@ export default function VisualizationPanel({ caseName }: VisualizationPanelProps
           {loading ? (
             <div
               className="flex items-center justify-center"
-              style={{ height: 400, background: "#1e1e1e", border: "1px solid #474747" }}
+              style={{ height: 400, background: "var(--bg-editor)", border: "1px solid var(--border)" }}
             >
-              <p style={{ color: "#858585", fontSize: 13 }}>Loading field data...</p>
+              <p style={{ color: "var(--fg-muted)", fontSize: 13 }}>Loading field data...</p>
             </div>
           ) : error ? (
             <div
               className="flex items-center justify-center"
-              style={{ height: 400, background: "#1e1e1e", border: "1px solid #474747" }}
+              style={{ height: 400, background: "var(--bg-editor)", border: "1px solid var(--border)" }}
             >
-              <p style={{ color: "#f48771", fontSize: 13 }}>{error}</p>
+              <p style={{ color: "var(--error)", fontSize: 13 }}>{error}</p>
             </div>
           ) : (
             <FieldMeshRenderer

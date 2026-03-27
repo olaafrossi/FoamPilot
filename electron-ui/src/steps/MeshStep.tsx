@@ -214,19 +214,19 @@ export default function MeshStep({
 
   return (
     <div>
-      <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 4, color: "#ffffff" }}>Mesh</h2>
-      <p className="text-[#858585] text-[13px] mb-6">
+      <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 4, color: "var(--fg)", fontFamily: "var(--font-display)" }}>Mesh</h2>
+      <p style={{ color: "var(--fg-muted)", fontSize: 13, marginBottom: 24 }}>
         Edit mesh dictionaries, then generate the computational mesh.
       </p>
 
       {error && (
-        <div className="text-[#f48771] text-[13px] mb-4">{error}</div>
+        <div style={{ color: "var(--error)", fontSize: 13, marginBottom: 16 }}>{error}</div>
       )}
 
       {/* Tab bar */}
       <div
-        className="flex border-b border-[#474747] mb-4"
-        style={{ height: 35, background: "var(--bg-tab-inactive)" }}
+        className="flex mb-4"
+        style={{ height: 35, background: "var(--bg-tab-inactive)", borderBottom: "1px solid var(--border)" }}
       >
         {MESH_FILES.map((f, idx) => (
           <button
@@ -238,7 +238,7 @@ export default function MeshStep({
               display: "flex",
               alignItems: "center",
               background: idx === activeTab ? "var(--bg-editor)" : "var(--bg-tab-inactive)",
-              color: idx === activeTab ? "#ffffff" : "#858585",
+              color: idx === activeTab ? "var(--fg)" : "var(--fg-muted)",
               borderTop: idx === activeTab ? "2px solid var(--border-tab-active)" : "2px solid transparent",
               borderRadius: 0,
               borderLeft: "none",
@@ -253,7 +253,7 @@ export default function MeshStep({
 
       {/* Editor */}
       {loading ? (
-        <div className="h-[400px] flex items-center justify-center text-[#858585]">
+        <div className="h-[400px] flex items-center justify-center" style={{ color: "var(--fg-muted)" }}>
           Loading files...
         </div>
       ) : (
@@ -269,19 +269,32 @@ export default function MeshStep({
         <button
           onClick={generateMesh}
           disabled={running || !caseName}
-          className={
-            "px-6 py-2 rounded-sm font-semibold text-[13px] " +
-            (running
-              ? "bg-[#3c3c3c] text-[#858585] cursor-wait"
-              : "bg-[#0e639c] hover:bg-[#1177bb] text-white")
+          className="px-6 py-2 rounded-sm font-semibold text-[13px]"
+          style={
+            running
+              ? { background: "var(--bg-elevated)", color: "var(--fg-disabled)", cursor: "wait" }
+              : { background: "var(--accent)", color: "#09090B" }
           }
+          onMouseEnter={(e) => {
+            if (!running) (e.currentTarget as HTMLButtonElement).style.background = "var(--accent-hover)";
+          }}
+          onMouseLeave={(e) => {
+            if (!running) (e.currentTarget as HTMLButtonElement).style.background = "var(--accent)";
+          }}
         >
           {running ? "Generating Mesh..." : "Generate Mesh"}
         </button>
         {running && (
           <button
             onClick={handleCancel}
-            className="px-6 py-2 rounded-sm font-semibold text-[13px] bg-[#c72e42] hover:bg-[#d73b52] text-white"
+            className="px-6 py-2 rounded-sm font-semibold text-[13px]"
+            style={{ background: "var(--danger)", color: "var(--fg)" }}
+            onMouseEnter={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.background = "var(--danger-hover)";
+            }}
+            onMouseLeave={(e) => {
+              (e.currentTarget as HTMLButtonElement).style.background = "var(--danger)";
+            }}
           >
             Stop
           </button>
@@ -291,8 +304,8 @@ export default function MeshStep({
       {/* Log output */}
       {logLines.length > 0 && (
         <div
-          className="mt-4 border border-[#474747] p-3 h-64 overflow-y-auto font-mono text-[13px] text-[#cccccc]"
-          style={{ background: "var(--bg-editor)", borderRadius: 0 }}
+          className="mt-4 p-3 h-64 overflow-y-auto font-mono text-[13px]"
+          style={{ background: "var(--bg-editor)", border: "1px solid var(--border)", borderRadius: 0, color: "var(--fg)" }}
         >
           {logLines.map((line, i) => (
             <div key={i}>{line}</div>
@@ -303,60 +316,60 @@ export default function MeshStep({
 
       {/* Mesh quality stats */}
       {meshQuality && (
-        <div className="bg-[#252526] border border-[#474747] p-4 mt-4" style={{ borderRadius: 0 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 600, color: "#ffffff", marginBottom: 12 }}>Mesh Quality</h3>
+        <div className="p-4 mt-4" style={{ background: "var(--bg-surface)", border: "1px solid var(--border)", borderRadius: 0 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--fg)", marginBottom: 12 }}>Mesh Quality</h3>
           <div className="grid grid-cols-3 gap-4 text-[13px]">
             <div>
-              <span className="text-[#858585]">Cells:</span>{" "}
-              <span className="text-white">
+              <span style={{ color: "var(--fg-muted)" }}>Cells:</span>{" "}
+              <span style={{ color: "var(--fg)" }}>
                 {meshQuality.cells.toLocaleString()}
               </span>
             </div>
             <div>
-              <span className="text-[#858585]">Faces:</span>{" "}
-              <span className="text-white">
+              <span style={{ color: "var(--fg-muted)" }}>Faces:</span>{" "}
+              <span style={{ color: "var(--fg)" }}>
                 {meshQuality.faces.toLocaleString()}
               </span>
             </div>
             <div>
-              <span className="text-[#858585]">Points:</span>{" "}
-              <span className="text-white">
+              <span style={{ color: "var(--fg-muted)" }}>Points:</span>{" "}
+              <span style={{ color: "var(--fg)" }}>
                 {meshQuality.points.toLocaleString()}
               </span>
             </div>
             <div>
-              <span className="text-[#858585]">Max Non-Orthogonality:</span>{" "}
-              <span className="text-white">
+              <span style={{ color: "var(--fg-muted)" }}>Max Non-Orthogonality:</span>{" "}
+              <span style={{ color: "var(--fg)" }}>
                 {meshQuality.max_non_orthogonality.toFixed(1)}&deg;
               </span>
             </div>
             <div>
-              <span className="text-[#858585]">Max Skewness:</span>{" "}
-              <span className="text-white">
+              <span style={{ color: "var(--fg-muted)" }}>Max Skewness:</span>{" "}
+              <span style={{ color: "var(--fg)" }}>
                 {meshQuality.max_skewness.toFixed(3)}
               </span>
             </div>
             <div>
-              <span className="text-[#858585]">Max Aspect Ratio:</span>{" "}
-              <span className="text-white">
+              <span style={{ color: "var(--fg-muted)" }}>Max Aspect Ratio:</span>{" "}
+              <span style={{ color: "var(--fg)" }}>
                 {meshQuality.max_aspect_ratio.toFixed(1)}
               </span>
             </div>
           </div>
           {!meshQuality.ok && (
-            <div className="mt-3 text-[#f48771] text-[13px]">
+            <div className="mt-3 text-[13px]" style={{ color: "var(--error)" }}>
               Mesh has quality issues: {meshQuality.errors.join(", ")}
             </div>
           )}
           {meshQuality.ok && (
-            <div className="mt-3 text-[#89d185] text-[13px]">
+            <div className="mt-3 text-[13px] animate-amber-dot" style={{ color: "var(--success)" }}>
               Mesh quality OK
             </div>
           )}
           {/* 3D Mesh Preview */}
           {meshDone && caseName && (
             <div className="mt-4">
-              <h4 style={{ fontSize: 13, fontWeight: 600, color: "#cccccc", marginBottom: 8 }}>Geometry Preview</h4>
+              <h4 style={{ fontSize: 13, fontWeight: 600, color: "var(--fg)", marginBottom: 8 }}>Geometry Preview</h4>
               <MeshPreview caseName={caseName} />
             </div>
           )}
@@ -367,19 +380,32 @@ export default function MeshStep({
       <div className="flex justify-end gap-3 mt-6">
         <button
           onClick={goBack}
-          className="bg-transparent border border-[#474747] text-[#cccccc] hover:bg-[#2a2d2e] px-6 py-2 rounded-sm"
+          className="px-6 py-2 rounded-sm"
+          style={{ background: "transparent", border: "1px solid var(--border)", color: "var(--fg)" }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.background = "var(--bg-hover)";
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+          }}
         >
           &larr; Back
         </button>
         <button
           onClick={handleNext}
           disabled={!meshQuality}
-          className={
-            "px-6 py-2 rounded-sm font-semibold text-[13px] " +
-            (meshQuality
-              ? "bg-[#0e639c] hover:bg-[#1177bb] text-white"
-              : "bg-[#3c3c3c] text-[#858585] cursor-not-allowed")
+          className="px-6 py-2 rounded-sm font-semibold text-[13px]"
+          style={
+            meshQuality
+              ? { background: "var(--accent)", color: "#09090B" }
+              : { background: "var(--bg-elevated)", color: "var(--fg-disabled)", cursor: "not-allowed" }
           }
+          onMouseEnter={(e) => {
+            if (meshQuality) (e.currentTarget as HTMLButtonElement).style.background = "var(--accent-hover)";
+          }}
+          onMouseLeave={(e) => {
+            if (meshQuality) (e.currentTarget as HTMLButtonElement).style.background = "var(--accent)";
+          }}
         >
           Next &rarr;
         </button>

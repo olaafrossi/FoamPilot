@@ -106,31 +106,32 @@ export default function SolverStep({
 
   return (
     <div>
-      <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 4, color: "#ffffff" }}>Solver Settings</h2>
-      <p className="text-[#858585] text-[13px] mb-6">
+      <h2 style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 24, marginBottom: 4, color: "var(--fg)" }}>Solver Settings</h2>
+      <p style={{ color: "var(--fg-muted)", fontSize: 13, marginBottom: 24 }}>
         Configure simulation control, numerical schemes, and solver parameters.
       </p>
 
       {error && (
-        <div className="text-[#f48771] text-[13px] mb-4">{error}</div>
+        <div style={{ color: "var(--error)", fontSize: 13, marginBottom: 16 }}>{error}</div>
       )}
 
       {/* Tab bar */}
       <div
-        className="flex border-b border-[#474747] mb-2"
-        style={{ height: 35, background: "var(--bg-tab-inactive)" }}
+        className="flex mb-2"
+        style={{ height: 35, background: "var(--bg-tab-inactive)", borderBottom: "1px solid var(--border)" }}
       >
         {SOLVER_FILES.map((f, idx) => (
           <button
             key={f.key}
             onClick={() => handleTabChange(idx)}
-            className="px-4 text-[13px] transition-colors"
+            className="px-4 transition-colors"
             style={{
               height: 35,
               display: "flex",
               alignItems: "center",
+              fontSize: 13,
               background: idx === activeTab ? "var(--bg-editor)" : "var(--bg-tab-inactive)",
-              color: idx === activeTab ? "#ffffff" : "#858585",
+              color: idx === activeTab ? "var(--fg)" : "var(--fg-muted)",
               borderTop: idx === activeTab ? "2px solid var(--border-tab-active)" : "2px solid transparent",
               borderRadius: 0,
               borderLeft: "none",
@@ -145,15 +146,15 @@ export default function SolverStep({
 
       {/* Description for active file */}
       <div
-        className="px-4 py-2 mb-4 text-[13px] text-[#858585] border-b border-[#474747]"
-        style={{ background: "var(--bg-sidebar)" }}
+        className="px-4 py-2 mb-4"
+        style={{ fontSize: 13, color: "var(--fg-muted)", borderBottom: "1px solid var(--border)", background: "var(--bg-sidebar)" }}
       >
         {currentFile.description}
       </div>
 
       {/* Editor */}
       {loading ? (
-        <div className="h-[400px] flex items-center justify-center text-[#858585]">
+        <div className="h-[400px] flex items-center justify-center" style={{ color: "var(--fg-muted)" }}>
           Loading files...
         </div>
       ) : (
@@ -168,13 +169,31 @@ export default function SolverStep({
       <div className="flex justify-end gap-3 mt-6">
         <button
           onClick={goBack}
-          className="bg-transparent border border-[#474747] text-[#cccccc] hover:bg-[#2a2d2e] px-6 py-2 rounded-sm"
+          style={{
+            background: "transparent",
+            border: "1px solid var(--border)",
+            color: "var(--fg)",
+            padding: "8px 24px",
+            borderRadius: 2,
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "var(--bg-hover)")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
         >
           &larr; Back
         </button>
         <button
           onClick={handleNext}
-          className="bg-[#0e639c] hover:bg-[#1177bb] text-white px-6 py-2 rounded-sm font-semibold text-[13px]"
+          style={{
+            background: "var(--accent)",
+            color: "#09090B",
+            padding: "8px 24px",
+            borderRadius: 2,
+            fontWeight: 600,
+            fontSize: 13,
+            border: "none",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent-hover)")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "var(--accent)")}
         >
           Next &rarr;
         </button>
