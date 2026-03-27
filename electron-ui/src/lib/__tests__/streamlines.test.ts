@@ -82,13 +82,13 @@ describe('computeMagnitude', () => {
 describe('generateSeedPoints', () => {
   it('returns the requested count of points', () => {
     const { vertices, faces } = makeQuadMesh();
-    const seeds = generateSeedPoints(vertices, faces, 10);
+    const seeds = generateSeedPoints(vertices, faces, { count: 10 });
     expect(seeds).toHaveLength(10);
   });
 
   it('all points lie within the mesh bounding box', () => {
     const { vertices, faces } = makeQuadMesh();
-    const seeds = generateSeedPoints(vertices, faces, 50);
+    const seeds = generateSeedPoints(vertices, faces, { count: 50 });
     for (const p of seeds) {
       expect(p[0]).toBeGreaterThanOrEqual(0);
       expect(p[0]).toBeLessThanOrEqual(1);
@@ -101,18 +101,62 @@ describe('generateSeedPoints', () => {
 
   it('returns empty array for zero count', () => {
     const { vertices, faces } = makeQuadMesh();
-    expect(generateSeedPoints(vertices, faces, 0)).toHaveLength(0);
+    expect(generateSeedPoints(vertices, faces, { count: 0 })).toHaveLength(0);
   });
 
   it('returns empty array for empty mesh', () => {
-    expect(generateSeedPoints([], [], 5)).toHaveLength(0);
+    expect(generateSeedPoints([], [], { count: 5 })).toHaveLength(0);
   });
 
   it('is deterministic (same mesh → same points)', () => {
     const { vertices, faces } = makeQuadMesh();
-    const a = generateSeedPoints(vertices, faces, 10);
-    const b = generateSeedPoints(vertices, faces, 10);
+    const a = generateSeedPoints(vertices, faces, { count: 10 });
+    const b = generateSeedPoints(vertices, faces, { count: 10 });
     expect(a).toEqual(b);
+  });
+
+  it('faceSubset restricts seeds to specified faces', () => {
+    const { vertices, faces } = makeLargerMesh();
+    // Only seed on face 0 (triangle v0-v1-v3, x ∈ [0,1], y ∈ [0,1])
+    const seeds = generateSeedPoints(vertices, faces, {
+      count: 20,
+      faceSubset: [0],
+    });
+    expect(seeds).toHaveLength(20);
+    for (const p of seeds) {
+      expect(p[0]).toBeGreaterThanOrEqual(0);
+      expect(p[0]).toBeLessThanOrEqual(1);
+      expect(p[1]).toBeGreaterThanOrEqual(0);
+      expect(p[1]).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('velocity mode biases seeds toward high-velocity faces', () => {
+    const { vertices, faces } = makeLargerMesh();
+    // High velocity on faces 6-7 (top-right quadrant), zero elsewhere
+    const vectors = [
+      [0, 0, 0], [0, 0, 0], [0, 0, 0],  // bottom row
+      [0, 0, 0], [0, 0, 0], [10, 0, 0],  // middle row — v5 high
+      [0, 0, 0], [0, 0, 0], [10, 0, 0],  // top row — v8 high
+    ];
+    const seeds = generateSeedPoints(vertices, faces, {
+      count: 100,
+      mode: 'velocity',
+      vectors,
+    });
+    expect(seeds).toHaveLength(100);
+    // Most seeds should fall in the top-right quadrant (x > 1, y > 1)
+    const topRight = seeds.filter((p) => p[0] > 1 && p[1] > 1);
+    expect(topRight.length).toBeGreaterThan(50); // majority
+  });
+
+  it('empty faceSubset returns empty array', () => {
+    const { vertices, faces } = makeQuadMesh();
+    const seeds = generateSeedPoints(vertices, faces, {
+      count: 10,
+      faceSubset: [],
+    });
+    expect(seeds).toHaveLength(0);
   });
 });
 
