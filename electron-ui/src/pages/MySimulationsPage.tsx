@@ -72,8 +72,8 @@ export default function MySimulationsPage() {
               <div>
                 <h3 className="font-semibold text-[13px]" style={{ color: "var(--fg)" }}>{c.name}</h3>
                 <p className="text-[13px]" style={{ color: "var(--fg-muted)" }}>
-                  Modified: {new Date(c.modified).toLocaleDateString()} ·{" "}
-                  {(c.size_bytes / 1024 / 1024).toFixed(1)} MB
+                  Modified: {new Date(c.modified).toLocaleDateString()}
+                  {c.size_bytes != null && <> · {(c.size_bytes / 1024 / 1024).toFixed(1)} MB</>}
                 </p>
               </div>
               <div className="flex gap-2">
