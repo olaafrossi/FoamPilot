@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import FoamEditor from "../components/FoamEditor";
 import MeshPreview from "../components/MeshPreview";
 import LogViewer from "../components/LogViewer";
+import { useStatus } from "../hooks/useStatus";
 import {
   readFile,
   writeFile,
@@ -61,6 +62,13 @@ export default function MeshStep({
   const [meshDone, setMeshDone] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const stopwatch = useStopwatch();
+  const { setWorking } = useStatus();
+
+  // Sync running state to global status bar
+  useEffect(() => {
+    setWorking(running);
+    return () => setWorking(false);
+  }, [running, setWorking]);
 
   // Load all files on mount
   useEffect(() => {
@@ -312,14 +320,8 @@ export default function MeshStep({
 
       {/* Log output */}
       {logLines.length > 0 && (
-        <div
-          className="mt-4 p-3 h-64 overflow-y-auto font-mono text-[13px]"
-          style={{ background: "var(--bg-editor)", border: "1px solid var(--border)", borderRadius: 0, color: "var(--fg)" }}
-        >
-          {logLines.map((line, i) => (
-            <div key={i}>{line}</div>
-          ))}
-          <div ref={logEndRef} />
+        <div className="mt-4">
+          <LogViewer lines={logLines} />
         </div>
       )}
 

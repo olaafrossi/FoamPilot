@@ -95,8 +95,10 @@ export default function LogViewer({ lines, height = "256px" }: LogViewerProps) {
     setShowTail(!atBottom);
   }, []);
 
-  // Jump to the current last line (don't resume auto-scroll)
+  // Jump to bottom and re-enable auto-tailing
   const handleTail = useCallback(() => {
+    userScrolledRef.current = false;
+    setShowTail(false);
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
 

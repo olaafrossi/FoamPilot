@@ -10,6 +10,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import LogViewer from "../components/LogViewer";
+import { useStatus } from "../hooks/useStatus";
 import { runCommands, connectLogs, getJobStatus, cancelJob, getConfig } from "../api";
 import { useStopwatch, formatElapsed } from "../hooks/useStopwatch";
 
@@ -76,6 +77,13 @@ export default function RunStep({
   const wsRef = useRef<WebSocket | null>(null);
   const stopwatch = useStopwatch();
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const { setWorking } = useStatus();
+
+  // Sync running state to global status bar
+  useEffect(() => {
+    setWorking(running);
+    return () => setWorking(false);
+  }, [running, setWorking]);
 
   // Buffer for log lines to avoid overwhelming React
   const lineBufferRef = useRef<string[]>([]);
@@ -342,15 +350,7 @@ export default function RunStep({
 
       {/* Log output */}
       {logLines.length > 0 && (
-        <div
-          className="border border-[var(--border)] p-3 h-64 overflow-y-auto font-mono text-[13px] text-[var(--fg)]"
-          style={{ background: "var(--bg-editor)", borderRadius: 0 }}
-        >
-          {logLines.map((line, i) => (
-            <div key={i}>{line}</div>
-          ))}
-          <div ref={logEndRef} />
-        </div>
+        <LogViewer lines={logLines} />
       )}
 
       {/* Navigation */}
