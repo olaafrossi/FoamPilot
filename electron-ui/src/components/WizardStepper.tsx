@@ -26,7 +26,7 @@ export default function WizardStepper({ currentStep, completedSteps }: Props) {
       style={{
         height: 22,
         background: "var(--bg-editor)",
-        padding: "0 10px",
+        padding: "0 32px",
         fontSize: 13,
         fontFamily: "var(--font-ui)",
       }}
