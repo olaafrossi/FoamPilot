@@ -317,7 +317,7 @@ export default function MeshStep({
       {/* Log output */}
       {logLines.length > 0 && (
         <div className="mt-4">
-          <LogViewer lines={logLines} />
+          <LogViewer lines={logLines} height="300px" />
         </div>
       )}
 
