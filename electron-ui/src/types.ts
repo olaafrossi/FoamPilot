@@ -77,6 +77,84 @@ export interface FieldData {
   warning?: string | null;
 }
 
+export interface GeometryClassification {
+  geometry_class: "streamlined" | "bluff" | "complex";
+  characteristic_length: number;
+  frontal_area: number;
+  wetted_area_estimate: number;
+  aspect_ratio: number;
+  description: string;
+  warning: string | null;
+}
+
+export interface MeshSuggestion {
+  domain_multiplier_upstream: number;
+  domain_multiplier_downstream: number;
+  domain_multiplier_side: number;
+  domain_multiplier_top: number;
+  surface_refinement_min: number;
+  surface_refinement_max: number;
+  feature_level: number;
+  region_refinement_level: number;
+  n_surface_layers: number;
+  expansion_ratio: number;
+  first_layer_height: number | null;
+  y_plus_target: number;
+  estimated_cells: number;
+  rationale: string;
+}
+
+export interface PhysicsSuggestion {
+  reynolds_number: number;
+  turbulence_model: string;
+  turbulence_model_rationale: string;
+  freestream_k: number;
+  freestream_omega: number;
+  freestream_nut: number;
+  inlet_velocity: number[];
+}
+
+export interface SolverSuggestion {
+  solver_name: string;
+  end_time: number;
+  write_interval: number;
+  convergence_target: number;
+  rationale: string;
+}
+
+export interface ConvergencePrediction {
+  expected_iterations: number;
+  confidence: "low" | "medium" | "high";
+  risk_factors: string[];
+  status: string;
+}
+
+export interface AeroSuggestions {
+  geometry: GeometryClassification;
+  mesh: MeshSuggestion;
+  physics: PhysicsSuggestion;
+  solver: SolverSuggestion;
+  convergence: ConvergencePrediction;
+}
+
+export interface YPlusResult {
+  first_cell_height: number | null;
+  re: number;
+  cf: number;
+  u_tau: number;
+  y_plus_target: number;
+  characteristic_length: number;
+  message: string | null;
+}
+
+export interface ReynoldsResult {
+  reynolds_number: number;
+  velocity: number;
+  characteristic_length: number;
+  kinematic_viscosity: number;
+  regime: "laminar" | "transitional" | "turbulent";
+}
+
 // Electron preload API
 declare global {
   interface Window {
@@ -86,6 +164,7 @@ declare global {
       openFolder: (folderPath: string) => Promise<void>;
       selectFile: (filters: { name: string; extensions: string[] }[]) => Promise<string | null>;
       readFile: (filePath: string) => Promise<ArrayBuffer>;
+      showNotification: (title: string, body: string) => Promise<boolean>;
     };
   }
 }

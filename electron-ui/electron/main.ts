@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, dialog } from "electron";
+import { app, BrowserWindow, ipcMain, shell, dialog, Notification } from "electron";
 import * as path from "path";
 import * as fs from "fs";
 
@@ -86,6 +86,15 @@ ipcMain.handle("select-file", async (_, filters: { name: string; extensions: str
 
 ipcMain.handle("read-file", async (_, filePath: string) => {
   return fs.readFileSync(filePath);
+});
+
+ipcMain.handle("show-notification", async (_, title: string, body: string) => {
+  if (Notification.isSupported()) {
+    const notification = new Notification({ title, body });
+    notification.show();
+    return true;
+  }
+  return false;
 });
 
 app.whenReady().then(createWindow);

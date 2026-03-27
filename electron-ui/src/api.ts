@@ -1,4 +1,4 @@
-import type { AppConfig, Template, JobResponse, MeshQuality, AeroResults, CaseInfo, FieldData } from "./types";
+import type { AppConfig, Template, JobResponse, MeshQuality, AeroResults, CaseInfo, FieldData, AeroSuggestions, GeometryClassification, YPlusResult, ReynoldsResult } from "./types";
 
 let config: AppConfig = {
   backendUrl: "http://localhost:8000",
@@ -115,6 +115,43 @@ export async function getFieldData(
     api(`/cases/${caseName}/field-data?field=${encodeURIComponent(field)}&time=${encodeURIComponent(time)}`),
   );
   if (!res.ok) throw new Error(`Failed to get field data: ${res.statusText}`);
+  return res.json();
+}
+
+export async function classifyGeometry(caseName: string): Promise<GeometryClassification> {
+  const res = await fetch(api(`/cases/${caseName}/classify`));
+  if (!res.ok) throw new Error(`Failed to classify geometry: ${res.statusText}`);
+  return res.json();
+}
+
+export async function getSuggestions(
+  caseName: string,
+  velocity: number = 20,
+  geometryClass?: string,
+): Promise<AeroSuggestions> {
+  let url = `/cases/${caseName}/suggest?velocity=${velocity}`;
+  if (geometryClass) url += `&geometry_class=${geometryClass}`;
+  const res = await fetch(api(url));
+  if (!res.ok) throw new Error(`Failed to get suggestions: ${res.statusText}`);
+  return res.json();
+}
+
+export async function getYPlus(
+  caseName: string,
+  velocity: number = 20,
+  yPlusTarget: number = 30,
+): Promise<YPlusResult> {
+  const res = await fetch(api(`/cases/${caseName}/y-plus?velocity=${velocity}&y_plus_target=${yPlusTarget}`));
+  if (!res.ok) throw new Error(`Failed to calculate y+: ${res.statusText}`);
+  return res.json();
+}
+
+export async function getReynolds(
+  caseName: string,
+  velocity: number = 20,
+): Promise<ReynoldsResult> {
+  const res = await fetch(api(`/cases/${caseName}/reynolds?velocity=${velocity}`));
+  if (!res.ok) throw new Error(`Failed to calculate Re: ${res.statusText}`);
   return res.json();
 }
 
