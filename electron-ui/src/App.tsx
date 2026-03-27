@@ -8,6 +8,7 @@ import { formatElapsed } from "./hooks/useStopwatch";
 import WizardPage from "./pages/WizardPage";
 import MySimulationsPage from "./pages/MySimulationsPage";
 import SettingsPage from "./pages/SettingsPage";
+import SetupPage from "./pages/SetupPage";
 
 const NAV_ITEMS = [
   { id: "wizard", icon: Rocket, label: "Wizard", path: "/wizard" },
@@ -370,6 +371,8 @@ function PlaceholderPage({ title }: { title: string }) {
 
 export default function App() {
   const [config, setAppConfig] = useState<AppConfig | null>(null);
+  const [dockerReady, setDockerReady] = useState(false);
+  const [updateToast, setUpdateToast] = useState<string | null>(null);
 
   useEffect(() => {
     if (window.foamPilot?.getConfig) {
@@ -395,6 +398,25 @@ export default function App() {
       setConfig(defaults);
       setAppConfig(defaults);
     }
+
+    // Check Docker status on mount — if backend is already healthy, skip setup
+    if (window.foamPilot?.docker) {
+      window.foamPilot.docker.healthCheck().then((healthy) => {
+        if (healthy) setDockerReady(true);
+      }).catch(() => {});
+
+      // Listen for update notifications
+      const unsub = window.foamPilot.updates?.onAvailable?.((info) => {
+        if (info.type === "container") {
+          setUpdateToast(`Container update available: v${info.latest}`);
+          setTimeout(() => setUpdateToast(null), 8000);
+        } else if (info.type === "electron") {
+          setUpdateToast("App update downloading...");
+          setTimeout(() => setUpdateToast(null), 8000);
+        }
+      });
+      return () => { unsub?.(); };
+    }
   }, []);
 
   if (!config)
@@ -407,10 +429,28 @@ export default function App() {
       </div>
     );
 
+  // Show setup page if Docker/backend not ready (only in Electron context)
+  if (!dockerReady && window.foamPilot?.docker) {
+    return <SetupPage onReady={() => setDockerReady(true)} />;
+  }
+
   return (
     <HashRouter>
       <StatusProvider>
         <AppShell />
+        {/* Update toast notification */}
+        {updateToast && (
+          <div
+            className="fixed bottom-8 right-8 px-4 py-2 text-[13px] font-medium z-50"
+            style={{
+              backgroundColor: "var(--accent)",
+              color: "#09090B",
+              boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+            }}
+          >
+            {updateToast}
+          </div>
+        )}
       </StatusProvider>
     </HashRouter>
   );

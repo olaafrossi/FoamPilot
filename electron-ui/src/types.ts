@@ -161,6 +161,25 @@ export interface ReynoldsResult {
   regime: "laminar" | "transitional" | "turbulent";
 }
 
+// Docker & Update types
+export interface DockerFullStatus {
+  installed: boolean;
+  version?: string;
+  running?: boolean;
+  composeAvailable?: boolean;
+  container?: "running" | "stopped" | "not_found" | "unhealthy";
+}
+
+export interface ContainerUpdateInfo {
+  available: boolean;
+  current: string;
+  latest: string;
+}
+
+export interface UpdateCheckResult {
+  container: ContainerUpdateInfo | null;
+}
+
 // Electron preload API
 declare global {
   interface Window {
@@ -171,6 +190,25 @@ declare global {
       selectFile: (filters: { name: string; extensions: string[] }[]) => Promise<string | null>;
       readFile: (filePath: string) => Promise<ArrayBuffer>;
       showNotification: (title: string, body: string) => Promise<boolean>;
+
+      docker: {
+        getStatus: () => Promise<DockerFullStatus>;
+        pull: (tag?: string) => Promise<{ ok: boolean; error?: string }>;
+        start: () => Promise<{ ok: boolean; healthy?: boolean; error?: string }>;
+        stop: () => Promise<{ ok: boolean; error?: string }>;
+        ensureSetup: () => Promise<{ ok: boolean; error?: string }>;
+        healthCheck: () => Promise<boolean>;
+        onProgress: (cb: (msg: string) => void) => () => void;
+        onStatusChange: (cb: (status: any) => void) => () => void;
+      };
+
+      updates: {
+        check: () => Promise<UpdateCheckResult>;
+        applyContainer: (tag: string) => Promise<{ ok: boolean; error?: string }>;
+        getAppVersion: () => Promise<string>;
+        onAvailable: (cb: (info: any) => void) => () => void;
+        onDownloaded: (cb: (info: any) => void) => () => void;
+      };
     };
   }
 }
