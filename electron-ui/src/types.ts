@@ -80,6 +80,8 @@ export interface FieldData {
   field: string;
   time: string;
   patches: { name: string; startFace: number; nFaces: number }[];
+  available_fields?: string[];
+  available_times?: string[];
   warning?: string | null;
 }
 
@@ -133,6 +135,7 @@ export interface ConvergencePrediction {
   confidence: "low" | "medium" | "high";
   risk_factors: string[];
   status: string;
+  convergence_target?: number;
 }
 
 export interface AeroSuggestions {

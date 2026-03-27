@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { LayoutGrid, Upload, Info, Wind, Tag } from "lucide-react";
+import { LayoutGrid, Upload, Info, Wind, Tag, type LucideIcon } from "lucide-react";
 import { fetchTemplates, createCase, deleteCase, uploadGeometry, classifyGeometry } from "../api";
 import type { Template, GeometryClassification } from "../types";
 import MeshPreview from "../components/MeshPreview";
@@ -790,7 +790,7 @@ function TemplateCard({
   onSelect,
 }: {
   tmpl: Template;
-  Icon: typeof Bike;
+  Icon: LucideIcon;
   selected: boolean;
   loading: boolean;
   onSelect: (tmpl: Template) => void;
