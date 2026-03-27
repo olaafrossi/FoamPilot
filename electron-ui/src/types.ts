@@ -64,6 +64,19 @@ export interface CaseInfo {
   has_results: boolean;
 }
 
+export interface FieldData {
+  vertices: number[][];     // [[x,y,z], ...]
+  faces: number[][];        // [[i,j,k], ...] triangulated
+  values: number[];         // one scalar per vertex
+  vectors?: number[][];     // [[vx,vy,vz], ...] for vector fields
+  min: number;
+  max: number;
+  field: string;
+  time: string;
+  patches: { name: string; startFace: number; nFaces: number }[];
+  warning?: string | null;
+}
+
 // Electron preload API
 declare global {
   interface Window {
