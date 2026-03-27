@@ -270,6 +270,14 @@ export default function App() {
         paraViewPath: "C:\\Program Files\\ParaView 6.0.1\\bin\\paraview.exe",
         cores: 10,
       };
+      // Load saved settings from localStorage
+      try {
+        const saved = localStorage.getItem("foampilot-config");
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          Object.assign(defaults, parsed);
+        }
+      } catch { /* ignore parse errors */ }
       setConfig(defaults);
       setAppConfig(defaults);
     }

@@ -136,7 +136,7 @@ export default function MeshStep({
       "surfaceFeatureExtract",
       "blockMesh",
       "decomposePar -force",
-      "mpirun -np " + cores + " snappyHexMesh -overwrite -parallel",
+      "mpirun -np " + cores + " --oversubscribe snappyHexMesh -overwrite -parallel",
       "reconstructParMesh -constant",
     ];
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import os
 import re
 import shutil
@@ -10,6 +11,7 @@ import subprocess
 from pathlib import Path
 
 from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 
 from services.config_generator import (
     generate_block_mesh_dict,
@@ -208,3 +210,42 @@ async def case_results(name: str):
         "wall_time_seconds": result.wall_time_seconds,
         "converged": result.converged,
     }
+
+
+# ---------------------------------------------------------------------------
+# GET /cases/{name}/geometry-file
+# ---------------------------------------------------------------------------
+
+@router.get("/{name}/geometry-file")
+async def serve_geometry_file(name: str):
+    """Serve the geometry file (STL/OBJ) from constant/triSurface/.
+
+    Automatically decompresses .gz files if needed.
+    """
+    case_path = Path(validate_case_path(name))
+    tri_dir = case_path / "constant" / "triSurface"
+    if not tri_dir.is_dir():
+        raise HTTPException(status_code=404, detail="No triSurface directory")
+
+    # Search for geometry files in priority order
+    for ext in ("*.stl", "*.obj"):
+        matches = [f for f in tri_dir.glob(ext) if not f.name.endswith(".gz")]
+        if matches:
+            geo_file = matches[0]
+            media = "model/stl" if geo_file.suffix == ".stl" else "text/plain"
+            return FileResponse(str(geo_file), media_type=media, filename=geo_file.name)
+
+    # Try .gz compressed files
+    for ext in ("*.stl.gz", "*.obj.gz"):
+        matches = list(tri_dir.glob(ext))
+        if matches:
+            gz_file = matches[0]
+            # Decompress to sibling path (strip .gz)
+            decompressed = gz_file.with_suffix("")  # e.g. motorBike.obj.gz -> motorBike.obj
+            if not decompressed.exists():
+                with gzip.open(gz_file, "rb") as f_in:
+                    decompressed.write_bytes(f_in.read())
+            media = "model/stl" if decompressed.suffix == ".stl" else "text/plain"
+            return FileResponse(str(decompressed), media_type=media, filename=decompressed.name)
+
+    raise HTTPException(status_code=404, detail="No geometry file found in triSurface/")

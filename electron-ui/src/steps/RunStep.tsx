@@ -121,7 +121,7 @@ export default function RunStep({
 
     const commands = [
       "decomposePar -force",
-      "mpirun -np " + cores + " simpleFoam -parallel",
+      "mpirun -np " + cores + " --oversubscribe simpleFoam -parallel",
       "reconstructPar",
     ];
 

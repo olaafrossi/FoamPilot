@@ -4,6 +4,7 @@ import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { getConfig } from "../api";
 import { RotateCcw } from "lucide-react";
 
@@ -66,12 +67,27 @@ function OBJModel({ url }: { url: string }) {
     loader.load(
       url,
       (obj) => {
-        // Find the first mesh in the OBJ
+        // Merge ALL meshes in the OBJ into one geometry
+        const geometries: THREE.BufferGeometry[] = [];
         obj.traverse((child) => {
           if (child instanceof THREE.Mesh && child.geometry) {
-            setGeometry(child.geometry);
+            // Apply the child's world transform to the geometry
+            const geo = child.geometry.clone();
+            geo.applyMatrix4(child.matrixWorld);
+            geometries.push(geo);
           }
         });
+
+        if (geometries.length === 0) return;
+
+        if (geometries.length === 1) {
+          setGeometry(geometries[0]);
+        } else {
+          // Merge all geometries into one
+          const merged = mergeGeometries(geometries);
+          if (merged) setGeometry(merged);
+          else setGeometry(geometries[0]); // fallback
+        }
       },
       undefined,
       (err) => console.error("OBJ load error:", err),
@@ -119,75 +135,44 @@ export default function MeshPreview({ caseName }: MeshPreviewProps) {
 
   useEffect(() => {
     const config = getConfig();
-    const triDir = `${config.localCasesPath}/${caseName}/constant/triSurface`;
+    let blobUrl: string | null = null;
 
-    // Try to find geometry file via the backend (serves files over HTTP)
-    // Fall back to checking common filenames
-    const tryFiles = async () => {
+    const loadGeometry = async () => {
       setLoading(true);
       setError(null);
 
-      // Check for common geometry files by trying to fetch them
-      const candidates = [
-        { name: "motorBike.obj", type: "obj" as const },
-        { name: "motorBike.stl", type: "stl" as const },
-        { name: "geometry.stl", type: "stl" as const },
-        { name: "geometry.obj", type: "obj" as const },
-      ];
-
-      // In browser mode (not Electron), we can't read local files directly.
-      // Use the backend to serve the file content.
-      for (const candidate of candidates) {
-        try {
-          const res = await fetch(
-            `${config.backendUrl}/cases/${caseName}/file?path=constant/triSurface/${candidate.name}`,
-          );
-          if (res.ok) {
-            // Got the file — create a blob URL
-            const data = await res.json();
-            if (data.content) {
-              // Text content (OBJ files are text)
-              const blob = new Blob([data.content], { type: "text/plain" });
-              const url = URL.createObjectURL(blob);
-              setFileUrl(url);
-              setFileType(candidate.type);
-              setLoading(false);
-              return;
-            }
-          }
-        } catch {
-          // Try next candidate
+      try {
+        // Use the dedicated backend endpoint that finds + decompresses geometry
+        const res = await fetch(
+          `${config.backendUrl}/cases/${caseName}/geometry-file`,
+        );
+        if (!res.ok) {
+          const detail = await res.text();
+          throw new Error(detail || res.statusText);
         }
-      }
 
-      // If we have Electron file access, try reading directly
-      if (window.foamPilot?.readFile) {
-        for (const candidate of candidates) {
-          try {
-            const filePath = `${triDir}/${candidate.name}`.replace(/\//g, "\\");
-            const buffer = await window.foamPilot.readFile(filePath);
-            const blob = new Blob([buffer]);
-            const url = URL.createObjectURL(blob);
-            setFileUrl(url);
-            setFileType(candidate.type);
-            setLoading(false);
-            return;
-          } catch {
-            // Try next
-          }
-        }
-      }
+        // Detect file type from Content-Disposition or URL
+        const disposition = res.headers.get("content-disposition") ?? "";
+        const isStl = disposition.includes(".stl") ||
+          res.headers.get("content-type")?.includes("stl");
 
-      setError("No geometry file found in constant/triSurface/");
-      setLoading(false);
+        const blob = await res.blob();
+        blobUrl = URL.createObjectURL(blob);
+        setFileUrl(blobUrl);
+        setFileType(isStl ? "stl" : "obj");
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Failed to load geometry");
+      } finally {
+        setLoading(false);
+      }
     };
 
-    tryFiles();
+    loadGeometry();
 
     return () => {
-      if (fileUrl) URL.revokeObjectURL(fileUrl);
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
-  }, [caseName]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [caseName]);
 
   if (loading) {
     return (
