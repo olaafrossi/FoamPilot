@@ -21,7 +21,7 @@ export default function SettingsPage() {
 
   return (
     <div className="p-8 max-w-2xl mx-auto">
-      <h1 style={{ fontSize: 20, fontWeight: 600, color: "#ffffff", marginBottom: 24 }}>Settings</h1>
+      <h1 style={{ fontSize: 24, fontWeight: 700, color: "var(--fg)", marginBottom: 24, fontFamily: "var(--font-display)" }}>Settings</h1>
       <div className="space-y-4">
         <SettingInput
           label="Backend URL"
@@ -48,15 +48,18 @@ export default function SettingsPage() {
       <div className="mt-6 flex items-center gap-4">
         <button
           onClick={handleSave}
-          className="bg-[#0e639c] hover:bg-[#1177bb] text-white px-6 py-2 rounded-sm font-semibold text-[13px]"
+          className="px-6 py-2 rounded-sm font-semibold text-[13px]"
+          style={{ backgroundColor: "var(--accent)", color: "#09090B" }}
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = "var(--accent-hover)"; }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = "var(--accent)"; }}
         >
           Save Settings
         </button>
         {saved && (
-          <span className="text-[#89d185] text-[13px]">Settings saved</span>
+          <span className="text-[13px]" style={{ color: "var(--success)" }}>Settings saved</span>
         )}
       </div>
-      <p className="text-[13px] text-[#858585] mt-4">
+      <p className="text-[13px] mt-4" style={{ color: "var(--fg-muted)" }}>
         Settings are stored in your browser. CPU cores controls how many parallel
         processes OpenFOAM uses for meshing and solving.
       </p>
@@ -76,14 +79,21 @@ function SettingInput({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="bg-[#252526] border border-[#474747] p-4" style={{ borderRadius: 0 }}>
-      <label className="text-[13px] text-[#858585] block mb-2">{label}</label>
+    <div style={{ backgroundColor: "var(--bg-surface)", border: "1px solid var(--border)", padding: 16, borderRadius: 0 }}>
+      <label className="text-[13px] block mb-2" style={{ color: "var(--fg-muted)" }}>{label}</label>
       <input
         type={type}
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full bg-[#3c3c3c] border border-[#474747] text-[#cccccc] font-mono text-[13px] px-3 py-1.5 focus:border-[#0078d4] focus:outline-none"
-        style={{ borderRadius: 0 }}
+        className="w-full font-mono text-[13px] px-3 py-1.5 focus:outline-none"
+        style={{
+          backgroundColor: "var(--bg-input)",
+          border: "1px solid var(--border)",
+          color: "var(--fg)",
+          borderRadius: 0,
+        }}
+        onFocus={(e) => { e.currentTarget.style.borderColor = "var(--accent)"; }}
+        onBlur={(e) => { e.currentTarget.style.borderColor = "var(--border)"; }}
       />
     </div>
   );

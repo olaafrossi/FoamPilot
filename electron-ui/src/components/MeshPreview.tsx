@@ -179,9 +179,9 @@ export default function MeshPreview({ caseName }: MeshPreviewProps) {
     return (
       <div
         className="flex items-center justify-center"
-        style={{ height: 300, background: "#1e1e1e" }}
+        style={{ height: 300, background: "var(--bg-editor)" }}
       >
-        <p style={{ color: "#858585", fontSize: 13 }}>Loading geometry...</p>
+        <p style={{ color: "var(--fg-muted)", fontSize: 13 }}>Loading geometry...</p>
       </div>
     );
   }
@@ -190,9 +190,9 @@ export default function MeshPreview({ caseName }: MeshPreviewProps) {
     return (
       <div
         className="flex items-center justify-center"
-        style={{ height: 300, background: "#1e1e1e", border: "1px solid #474747" }}
+        style={{ height: 300, background: "var(--bg-editor)", border: "1px solid var(--border)" }}
       >
-        <p style={{ color: "#858585", fontSize: 13 }}>
+        <p style={{ color: "var(--fg-muted)", fontSize: 13 }}>
           {error ?? "3D preview unavailable"}
         </p>
       </div>
@@ -231,9 +231,9 @@ export default function MeshPreview({ caseName }: MeshPreviewProps) {
           top: 8,
           right: 8,
           background: "rgba(30,30,30,0.8)",
-          border: "1px solid #474747",
+          border: "1px solid var(--border)",
           borderRadius: 2,
-          color: "#cccccc",
+          color: "var(--fg)",
           padding: "4px 6px",
           cursor: "pointer",
           display: "flex",

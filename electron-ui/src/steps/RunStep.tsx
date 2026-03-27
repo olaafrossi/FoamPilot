@@ -38,9 +38,9 @@ const FIELD_COLORS: Record<string, string> = {
   Ux: "#3794ff",
   Uy: "#c586c0",
   Uz: "#4ec9b0",
-  p: "#f48771",
-  k: "#cca700",
-  omega: "#89d185",
+  p: "var(--error)",
+  k: "var(--warning)",
+  omega: "var(--success)",
 };
 
 // Parse: "Solving for Ux, Initial residual = 0.123, Final residual = 0.00456"
@@ -238,14 +238,14 @@ export default function RunStep({
 
   return (
     <div>
-      <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 4, color: "#ffffff" }}>Run Simulation</h2>
-      <p className="text-[#858585] text-[13px] mb-6">
+      <h2 style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 24, marginBottom: 4, color: "var(--fg)" }}>Run Simulation</h2>
+      <p className="text-[var(--fg-muted)] text-[13px] mb-6">
         Start the solver, monitor convergence, and track progress in real
         time.
       </p>
 
       {error && (
-        <div className="text-[#f48771] text-[13px] mb-4">{error}</div>
+        <div className="text-[var(--error)] text-[13px] mb-4">{error}</div>
       )}
 
       {/* Controls */}
@@ -254,7 +254,8 @@ export default function RunStep({
           <button
             onClick={startSolver}
             disabled={!caseName}
-            className="bg-[#0e639c] hover:bg-[#1177bb] text-white px-6 py-2 rounded-sm font-semibold text-[13px]"
+            className="hover:bg-[var(--accent-hover)] px-6 py-2 rounded-sm font-semibold text-[13px]"
+            style={{ backgroundColor: "var(--accent)", color: "#09090B" }}
           >
             Start Solver
           </button>
@@ -263,12 +264,12 @@ export default function RunStep({
           <>
             <button
               onClick={cancelRun}
-              className="bg-[#c72e42] hover:bg-[#d73b52] text-white px-6 py-2 rounded-sm font-semibold text-[13px]"
+              className="hover:bg-[var(--danger-hover)] text-white px-6 py-2 rounded-sm font-semibold text-[13px]"
+              style={{ backgroundColor: "var(--danger)" }}
             >
               Stop
             </button>
-            <span className="text-[#858585] text-[13px] flex items-center gap-1.5">
-              <span className="inline-block w-2 h-2 rounded-full bg-[#89d185] animate-pulse" />
+            <span className="text-[var(--fg-muted)] text-[13px] animate-amber-dot">
               Running... iteration {currentIteration}
             </span>
             <span className="text-[#858585] text-[13px] font-mono tabular-nums">
@@ -277,50 +278,50 @@ export default function RunStep({
           </>
         )}
         {finished && (
-          <span className="text-[#89d185] text-[13px] font-semibold">
-            Solver completed at iteration {currentIteration} in {formatElapsed(stopwatch.elapsed)}
+          <span className="text-[var(--success)] text-[13px] font-semibold animate-amber-dot">
+            Solver completed at iteration {currentIteration}
           </span>
         )}
       </div>
 
       {/* Convergence chart */}
       {residuals.length > 1 && (
-        <div className="bg-[#252526] border border-[#474747] p-4 mb-4" style={{ borderRadius: 0 }}>
-          <h3 style={{ fontSize: 14, fontWeight: 600, color: "#ffffff", marginBottom: 12 }}>Convergence</h3>
+        <div className="bg-[var(--bg-surface)] border border-[var(--border)] p-4 mb-4" style={{ borderRadius: 0 }}>
+          <h3 style={{ fontSize: 14, fontWeight: 600, color: "var(--fg)", marginBottom: 12 }}>Convergence</h3>
           <ResponsiveContainer width="100%" height={280}>
             <LineChart data={residuals}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#474747" />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
               <XAxis
                 dataKey="iteration"
-                stroke="#858585"
-                tick={{ fill: "#858585", fontSize: 11 }}
+                stroke="var(--fg-muted)"
+                tick={{ fill: "var(--fg-muted)", fontSize: 11 }}
                 label={{
                   value: "Iteration",
                   position: "insideBottom",
                   offset: -5,
-                  fill: "#858585",
+                  fill: "var(--fg-muted)",
                 }}
               />
               <YAxis
                 scale="log"
                 domain={["auto", "auto"]}
-                stroke="#858585"
-                tick={{ fill: "#858585", fontSize: 11 }}
+                stroke="var(--fg-muted)"
+                tick={{ fill: "var(--fg-muted)", fontSize: 11 }}
                 label={{
                   value: "Residual",
                   angle: -90,
                   position: "insideLeft",
-                  fill: "#858585",
+                  fill: "var(--fg-muted)",
                 }}
                 allowDataOverflow
               />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: "#252526",
-                  border: "1px solid #474747",
+                  backgroundColor: "var(--bg-surface)",
+                  border: "1px solid var(--border)",
                   borderRadius: 0,
                 }}
-                labelStyle={{ color: "#858585" }}
+                labelStyle={{ color: "var(--fg-muted)" }}
               />
               <Legend wrapperStyle={{ fontSize: 12 }} />
               {[...activeFields].map((field) => (
@@ -328,7 +329,7 @@ export default function RunStep({
                   key={field}
                   type="monotone"
                   dataKey={field}
-                  stroke={FIELD_COLORS[field] ?? "#858585"}
+                  stroke={FIELD_COLORS[field] ?? "var(--fg-muted)"}
                   dot={false}
                   strokeWidth={1.5}
                   isAnimationActive={false}
@@ -341,7 +342,15 @@ export default function RunStep({
 
       {/* Log output */}
       {logLines.length > 0 && (
-        <LogViewer lines={logLines} />
+        <div
+          className="border border-[var(--border)] p-3 h-64 overflow-y-auto font-mono text-[13px] text-[var(--fg)]"
+          style={{ background: "var(--bg-editor)", borderRadius: 0 }}
+        >
+          {logLines.map((line, i) => (
+            <div key={i}>{line}</div>
+          ))}
+          <div ref={logEndRef} />
+        </div>
       )}
 
       {/* Navigation */}
@@ -349,7 +358,7 @@ export default function RunStep({
         <button
           onClick={goBack}
           disabled={running}
-          className="bg-transparent border border-[#474747] text-[#cccccc] hover:bg-[#2a2d2e] px-6 py-2 rounded-sm"
+          className="bg-transparent border border-[var(--border)] text-[var(--fg)] hover:bg-[var(--bg-hover)] px-6 py-2 rounded-sm"
         >
           &larr; Back
         </button>
@@ -359,9 +368,10 @@ export default function RunStep({
           className={
             "px-6 py-2 rounded-sm font-semibold text-[13px] " +
             (finished
-              ? "bg-[#0e639c] hover:bg-[#1177bb] text-white"
-              : "bg-[#3c3c3c] text-[#858585] cursor-not-allowed")
+              ? "hover:bg-[var(--accent-hover)]"
+              : "bg-[var(--bg-input)] text-[var(--fg-muted)] cursor-not-allowed")
           }
+          style={finished ? { backgroundColor: "var(--accent)", color: "#09090B" } : undefined}
         >
           Next &rarr;
         </button>

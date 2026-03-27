@@ -33,17 +33,37 @@ function StatCard({
   unit?: string;
 }) {
   return (
-    <div className="bg-[#252526] border border-[#474747] p-4" style={{ borderRadius: 0 }}>
+    <div
+      style={{
+        background: "var(--bg-surface)",
+        border: "1px solid var(--border)",
+        padding: 16,
+        borderRadius: 0,
+      }}
+    >
       <p
-        className="text-[#858585] mb-1"
-        style={{ fontSize: 11, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}
+        style={{
+          color: "var(--fg-muted)",
+          marginBottom: 4,
+          fontSize: 11,
+          fontWeight: 600,
+          textTransform: "uppercase",
+          letterSpacing: "0.04em",
+        }}
       >
         {label}
       </p>
-      <p className="text-white" style={{ fontSize: 20, fontWeight: 600 }}>
+      <p style={{ color: "var(--fg)", fontSize: 20, fontWeight: 600 }}>
         {value !== null && value !== undefined ? value : "\u2014"}
         {unit && (
-          <span className="text-[#858585] font-normal ml-1" style={{ fontSize: 13 }}>
+          <span
+            style={{
+              color: "var(--fg-muted)",
+              fontWeight: 400,
+              marginLeft: 4,
+              fontSize: 13,
+            }}
+          >
             {unit}
           </span>
         )}
@@ -115,8 +135,18 @@ export default function ResultsStep({
   if (loading) {
     return (
       <div>
-        <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 4, color: "#ffffff" }}>Results</h2>
-        <p className="text-[#858585] text-[13px] mb-6">
+        <h2
+          style={{
+            fontFamily: "var(--font-display)",
+            fontWeight: 700,
+            fontSize: 24,
+            marginBottom: 4,
+            color: "var(--fg)",
+          }}
+        >
+          Results
+        </h2>
+        <p style={{ color: "var(--fg-muted)", fontSize: 13, marginBottom: 24 }}>
           Loading results...
         </p>
       </div>
@@ -125,23 +155,49 @@ export default function ResultsStep({
 
   return (
     <div>
-      <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 4, color: "#ffffff" }}>Results</h2>
-      <p className="text-[#858585] text-[13px] mb-6">
+      <h2
+        style={{
+          fontFamily: "var(--font-display)",
+          fontWeight: 700,
+          fontSize: 24,
+          marginBottom: 4,
+          color: "var(--fg)",
+        }}
+      >
+        Results
+      </h2>
+      <p style={{ color: "var(--fg-muted)", fontSize: 13, marginBottom: 24 }}>
         Aerodynamic coefficients and simulation summary for{" "}
-        <span className="text-white font-semibold">{caseName}</span>.
+        <span style={{ color: "var(--fg)", fontWeight: 600 }}>{caseName}</span>.
       </p>
 
       {error && (
-        <div className="text-[#f48771] text-[13px] mb-4">{error}</div>
+        <div style={{ color: "var(--error)", fontSize: 13, marginBottom: 16 }}>
+          {error}
+        </div>
       )}
 
       {/* Aero coefficients */}
       {results && (
         <>
-          <h3 style={{ fontSize: 14, fontWeight: 600, color: "#ffffff", marginBottom: 12 }}>
+          <h3
+            style={{
+              fontSize: 14,
+              fontWeight: 600,
+              color: "var(--fg)",
+              marginBottom: 12,
+            }}
+          >
             Aerodynamic Coefficients
           </h3>
-          <div className="grid grid-cols-3 gap-4 mb-6">
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(3, 1fr)",
+              gap: 16,
+              marginBottom: 24,
+            }}
+          >
             <StatCard
               label="Drag Coefficient (Cd)"
               value={results.cd?.toFixed(4) ?? null}
@@ -158,7 +214,15 @@ export default function ResultsStep({
 
           {(results.cd_pressure !== null ||
             results.cd_viscous !== null) && (
-            <div className="grid grid-cols-2 gap-4 mb-6 max-w-md">
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(2, 1fr)",
+                gap: 16,
+                marginBottom: 24,
+                maxWidth: 448,
+              }}
+            >
               <StatCard
                 label="Cd (Pressure)"
                 value={results.cd_pressure?.toFixed(4) ?? null}
@@ -174,14 +238,30 @@ export default function ResultsStep({
 
       {/* 3D Flow Visualization */}
       {caseName && (
-        <div className="mb-6">
+        <div style={{ marginBottom: 24 }}>
           <VisualizationPanel caseName={caseName} />
         </div>
       )}
 
       {/* Simulation summary */}
-      <h3 style={{ fontSize: 14, fontWeight: 600, color: "#ffffff", marginBottom: 12 }}>Simulation Summary</h3>
-      <div className="grid grid-cols-4 gap-4 mb-6">
+      <h3
+        style={{
+          fontSize: 14,
+          fontWeight: 600,
+          color: "var(--fg)",
+          marginBottom: 12,
+        }}
+      >
+        Simulation Summary
+      </h3>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(4, 1fr)",
+          gap: 16,
+          marginBottom: 24,
+        }}
+      >
         {meshQuality && (
           <StatCard
             label="Cells"
@@ -206,38 +286,120 @@ export default function ResultsStep({
       </div>
 
       {/* Action buttons */}
-      <div className="flex flex-wrap gap-3 mb-6">
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 24 }}>
         <button
           onClick={handleOpenParaView}
-          className="bg-[#0e639c] hover:bg-[#1177bb] text-white px-6 py-2 rounded-sm font-semibold text-[13px]"
+          style={{
+            background: "var(--accent)",
+            color: "#09090B",
+            paddingLeft: 24,
+            paddingRight: 24,
+            paddingTop: 8,
+            paddingBottom: 8,
+            borderRadius: 2,
+            fontWeight: 600,
+            fontSize: 13,
+            border: "none",
+            cursor: "pointer",
+          }}
+          onMouseEnter={(e) =>
+            (e.currentTarget.style.background = "var(--accent-hover)")
+          }
+          onMouseLeave={(e) =>
+            (e.currentTarget.style.background = "var(--accent)")
+          }
         >
           Open in ParaView
         </button>
         <button
           onClick={handleOpenFolder}
-          className="bg-transparent border border-[#474747] text-[#cccccc] hover:bg-[#2a2d2e] px-6 py-2 rounded-sm"
+          style={{
+            background: "transparent",
+            border: "1px solid var(--border)",
+            color: "var(--fg)",
+            paddingLeft: 24,
+            paddingRight: 24,
+            paddingTop: 8,
+            paddingBottom: 8,
+            borderRadius: 2,
+            cursor: "pointer",
+          }}
+          onMouseEnter={(e) =>
+            (e.currentTarget.style.background = "var(--bg-hover)")
+          }
+          onMouseLeave={(e) =>
+            (e.currentTarget.style.background = "transparent")
+          }
         >
           Open Case Folder
         </button>
         <button
           onClick={handleRunAgain}
-          className="bg-transparent border border-[#474747] text-[#cccccc] hover:bg-[#2a2d2e] px-6 py-2 rounded-sm"
+          style={{
+            background: "transparent",
+            border: "1px solid var(--border)",
+            color: "var(--fg)",
+            paddingLeft: 24,
+            paddingRight: 24,
+            paddingTop: 8,
+            paddingBottom: 8,
+            borderRadius: 2,
+            cursor: "pointer",
+          }}
+          onMouseEnter={(e) =>
+            (e.currentTarget.style.background = "var(--bg-hover)")
+          }
+          onMouseLeave={(e) =>
+            (e.currentTarget.style.background = "transparent")
+          }
         >
           Run Again
         </button>
         <button
           onClick={resetWizard}
-          className="bg-transparent border border-[#474747] text-[#cccccc] hover:bg-[#2a2d2e] px-6 py-2 rounded-sm"
+          style={{
+            background: "transparent",
+            border: "1px solid var(--border)",
+            color: "var(--fg)",
+            paddingLeft: 24,
+            paddingRight: 24,
+            paddingTop: 8,
+            paddingBottom: 8,
+            borderRadius: 2,
+            cursor: "pointer",
+          }}
+          onMouseEnter={(e) =>
+            (e.currentTarget.style.background = "var(--bg-hover)")
+          }
+          onMouseLeave={(e) =>
+            (e.currentTarget.style.background = "transparent")
+          }
         >
           New Simulation
         </button>
       </div>
 
       {/* Navigation */}
-      <div className="flex justify-end gap-3 mt-6">
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 24 }}>
         <button
           onClick={goBack}
-          className="bg-transparent border border-[#474747] text-[#cccccc] hover:bg-[#2a2d2e] px-6 py-2 rounded-sm"
+          style={{
+            background: "transparent",
+            border: "1px solid var(--border)",
+            color: "var(--fg)",
+            paddingLeft: 24,
+            paddingRight: 24,
+            paddingTop: 8,
+            paddingBottom: 8,
+            borderRadius: 2,
+            cursor: "pointer",
+          }}
+          onMouseEnter={(e) =>
+            (e.currentTarget.style.background = "var(--bg-hover)")
+          }
+          onMouseLeave={(e) =>
+            (e.currentTarget.style.background = "transparent")
+          }
         >
           &larr; Back
         </button>

@@ -17,6 +17,47 @@ const NAV_ITEMS = [
 
 const SETTINGS_ITEM = { id: "settings", icon: Settings, label: "Settings", path: "/settings" } as const;
 
+/** FP monogram logo — industrial amber branding */
+function FPLogo({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      title="FoamPilot"
+      className="flex items-center justify-center shrink-0 transition-shadow duration-200"
+      style={{
+        width: 48,
+        height: 48,
+        background: "transparent",
+        border: "none",
+        cursor: "pointer",
+        borderBottom: "1px solid var(--border)",
+      }}
+      onMouseEnter={(e) => {
+        (e.currentTarget as HTMLElement).style.boxShadow =
+          "0 0 12px rgba(245, 158, 11, 0.3)";
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLElement).style.boxShadow = "none";
+      }}
+    >
+      <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <text
+          x="14"
+          y="20"
+          textAnchor="middle"
+          fontFamily="Satoshi, Segoe UI, system-ui, sans-serif"
+          fontWeight="900"
+          fontSize="18"
+          fill="#F59E0B"
+          letterSpacing="-0.5"
+        >
+          FP
+        </text>
+      </svg>
+    </button>
+  );
+}
+
 function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -45,6 +86,9 @@ function AppShell() {
           className="flex flex-col shrink-0"
           style={{ width: 48, background: "var(--bg-activitybar)" }}
         >
+          {/* FP Logo */}
+          <FPLogo onClick={() => navigate("/wizard")} />
+
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
             const isActive = activeId === item.id;
@@ -53,21 +97,23 @@ function AppShell() {
                 key={item.id}
                 onClick={() => navigate(item.path)}
                 title={item.label}
-                className="relative flex items-center justify-center"
+                className="relative flex items-center justify-center transition-colors duration-100"
                 style={{
                   width: 48,
                   height: 48,
                   background: "transparent",
                   border: "none",
                   cursor: "pointer",
-                  borderLeft: isActive ? "2px solid white" : "2px solid transparent",
-                  color: isActive ? "#ffffff" : "#858585",
+                  borderLeft: isActive
+                    ? "2px solid var(--accent)"
+                    : "2px solid transparent",
+                  color: isActive ? "var(--fg)" : "var(--fg-muted)",
                 }}
                 onMouseEnter={(e) => {
-                  if (!isActive) (e.currentTarget as HTMLElement).style.color = "#ffffff";
+                  if (!isActive) (e.currentTarget as HTMLElement).style.color = "var(--fg)";
                 }}
                 onMouseLeave={(e) => {
-                  if (!isActive) (e.currentTarget as HTMLElement).style.color = "#858585";
+                  if (!isActive) (e.currentTarget as HTMLElement).style.color = "var(--fg-muted)";
                 }}
               >
                 <Icon size={24} />
@@ -84,21 +130,23 @@ function AppShell() {
                 <button
                   onClick={() => navigate(SETTINGS_ITEM.path)}
                   title={SETTINGS_ITEM.label}
-                  className="relative flex items-center justify-center"
+                  className="relative flex items-center justify-center transition-colors duration-100"
                   style={{
                     width: 48,
                     height: 48,
                     background: "transparent",
                     border: "none",
                     cursor: "pointer",
-                    borderLeft: isActive ? "2px solid white" : "2px solid transparent",
-                    color: isActive ? "#ffffff" : "#858585",
+                    borderLeft: isActive
+                      ? "2px solid var(--accent)"
+                      : "2px solid transparent",
+                    color: isActive ? "var(--fg)" : "var(--fg-muted)",
                   }}
                   onMouseEnter={(e) => {
-                    if (!isActive) (e.currentTarget as HTMLElement).style.color = "#ffffff";
+                    if (!isActive) (e.currentTarget as HTMLElement).style.color = "var(--fg)";
                   }}
                   onMouseLeave={(e) => {
-                    if (!isActive) (e.currentTarget as HTMLElement).style.color = "#858585";
+                    if (!isActive) (e.currentTarget as HTMLElement).style.color = "var(--fg-muted)";
                   }}
                 >
                   <Icon size={24} />
@@ -179,18 +227,20 @@ function AppShell() {
         </main>
       </div>
 
-      {/* Status Bar — 22px */}
+      {/* Status Bar — 22px, dark zinc with amber indicators */}
       <footer
         className="flex items-center px-[10px] shrink-0"
         style={{
           height: 22,
           background: "var(--bg-statusbar)",
-          color: "#ffffff",
+          borderTop: "1px solid var(--border)",
+          color: "var(--fg-muted)",
           fontSize: 12,
           fontFamily: "var(--font-ui)",
         }}
       >
-        <span>FoamPilot — Ready</span>
+        <span style={{ color: "var(--accent)" }}>●</span>
+        <span className="ml-[6px]">FoamPilot — Ready</span>
       </footer>
     </div>
   );
@@ -218,13 +268,13 @@ function SideBarSection({ title, children }: { title: string; children: React.Re
 function SideBarItem({ label, active }: { label: string; active?: boolean }) {
   return (
     <div
-      className="px-[10px] cursor-default"
+      className="px-[10px] cursor-default transition-colors duration-100"
       style={{
         height: 22,
         display: "flex",
         alignItems: "center",
         fontSize: 13,
-        color: active ? "#ffffff" : "var(--fg)",
+        color: active ? "var(--fg)" : "var(--fg)",
         background: active ? "var(--bg-selection)" : "transparent",
         borderRadius: 0,
       }}
@@ -247,7 +297,7 @@ function PlaceholderPage({ title }: { title: string }) {
       style={{ color: "var(--fg-muted)" }}
     >
       <div className="text-center">
-        <h2 style={{ fontSize: 20, fontWeight: 600, marginBottom: 8 }}>{title}</h2>
+        <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 8, fontFamily: "var(--font-display)" }}>{title}</h2>
         <p style={{ fontSize: 13 }}>Coming soon — use the Wizard for now.</p>
       </div>
     </div>
