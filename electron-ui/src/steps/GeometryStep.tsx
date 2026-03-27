@@ -1,8 +1,16 @@
 import { useState, useEffect, useCallback } from "react";
-import { LayoutGrid, Upload } from "lucide-react";
+import { LayoutGrid, Upload, Info } from "lucide-react";
 import { fetchTemplates, createCase, deleteCase, uploadGeometry } from "../api";
 import type { Template } from "../types";
 import MeshPreview from "../components/MeshPreview";
+
+const UNIT_OPTIONS = [
+  { label: "Millimeters (mm)", value: "mm", scale: 0.001, hint: "Most CAD tools export in mm" },
+  { label: "Meters (m)", value: "m", scale: 1.0, hint: "Already in SI units" },
+  { label: "Centimeters (cm)", value: "cm", scale: 0.01, hint: "" },
+  { label: "Inches (in)", value: "in", scale: 0.0254, hint: "Common in imperial CAD" },
+  { label: "Feet (ft)", value: "ft", scale: 0.3048, hint: "" },
+] as const;
 
 interface StepProps {
   caseName: string | null;
@@ -32,6 +40,8 @@ export default function GeometryStep({
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [stlUnit, setStlUnit] = useState("mm");
   const [uploadInfo, setUploadInfo] = useState<{
     filename: string;
     triangles: number;
@@ -93,29 +103,37 @@ export default function GeometryStep({
   );
 
   const handleFileDrop = useCallback(
-    async (files: FileList | null) => {
+    (files: FileList | null) => {
       if (!files || files.length === 0) return;
       const file = files[0];
       if (!file.name.toLowerCase().endsWith(".stl")) {
         setError("Please upload an STL file");
         return;
       }
-      setUploadedFile(file);
       setError(null);
-      setLoading(true);
-      try {
-        const name = file.name.replace(/\.stl$/i, "").replace(/\s+/g, "_").toLowerCase();
-        setCaseName(name);
-        const info = await uploadGeometry(name, file);
-        setUploadInfo(info);
-      } catch (e: unknown) {
-        setError(e instanceof Error ? e.message : "Failed to upload geometry");
-      } finally {
-        setLoading(false);
-      }
+      setPendingFile(file);
     },
-    [setCaseName],
+    [],
   );
+
+  const handleUpload = useCallback(async () => {
+    if (!pendingFile) return;
+    setUploadedFile(pendingFile);
+    setLoading(true);
+    setError(null);
+    const unitOption = UNIT_OPTIONS.find((u) => u.value === stlUnit) ?? UNIT_OPTIONS[0];
+    try {
+      const name = pendingFile.name.replace(/\.stl$/i, "").replace(/\s+/g, "_").toLowerCase();
+      setCaseName(name);
+      const info = await uploadGeometry(name, pendingFile, unitOption.scale);
+      setUploadInfo(info);
+      setPendingFile(null);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to upload geometry");
+    } finally {
+      setLoading(false);
+    }
+  }, [pendingFile, stlUnit, setCaseName]);
 
   const handleNext = () => {
     completeStep(0);
@@ -345,7 +363,7 @@ export default function GeometryStep({
         <div className="text-[13px] mb-4" style={{ color: "var(--error)" }}>{error}</div>
       )}
 
-      {!uploadInfo && (
+      {!uploadInfo && !pendingFile && (
         <div
           onDragOver={(e) => {
             e.preventDefault();
@@ -384,8 +402,106 @@ export default function GeometryStep({
         </div>
       )}
 
+      {/* --- Unit selector (shown after file picked, before upload) --- */}
+      {pendingFile && !uploadInfo && !loading && (
+        <div className="max-w-xl space-y-4">
+          <div
+            className="p-4"
+            style={{
+              background: "var(--bg-surface)",
+              border: "1px solid var(--border)",
+              borderRadius: 0,
+            }}
+          >
+            <p className="text-[13px] mb-3" style={{ color: "var(--fg)" }}>
+              <span style={{ color: "var(--fg-muted)" }}>File:</span>{" "}
+              {pendingFile.name}
+            </p>
+
+            <label className="block text-[13px] mb-1.5 font-semibold" style={{ color: "var(--fg)", fontFamily: "var(--font-display)" }}>
+              STL unit format
+            </label>
+            <select
+              value={stlUnit}
+              onChange={(e) => setStlUnit(e.target.value)}
+              className="w-full px-3 py-2 text-[13px] mb-1"
+              style={{
+                background: "#1a1a1e",
+                border: "1px solid var(--border)",
+                borderRadius: 0,
+                color: "#e4e4e7",
+                outline: "none",
+              }}
+            >
+              {UNIT_OPTIONS.map((u) => (
+                <option key={u.value} value={u.value} style={{ background: "#1a1a1e", color: "#e4e4e7" }}>
+                  {u.label}{u.hint ? ` — ${u.hint}` : ""}
+                </option>
+              ))}
+            </select>
+            {stlUnit !== "m" && (
+              <p className="text-[11px] mt-1" style={{ color: "var(--fg-muted)" }}>
+                Vertices will be scaled by {UNIT_OPTIONS.find((u) => u.value === stlUnit)?.scale} to convert to meters.
+              </p>
+            )}
+          </div>
+
+          <div
+            className="p-4 flex gap-3 items-start"
+            style={{
+              background: "var(--bg-surface)",
+              border: "1px solid var(--border)",
+              borderRadius: 0,
+            }}
+          >
+            <Info size={16} className="shrink-0 mt-0.5" style={{ color: "var(--accent)" }} />
+            <p className="text-[12px] leading-relaxed" style={{ color: "var(--fg-muted)" }}>
+              OpenFOAM works in SI units (meters). Most CAD tools export STL
+              files in millimeters. The motorBike tutorial ships its STL
+              already scaled to meters — if your geometry was exported in mm,
+              select "Millimeters" above and the vertices will be rescaled
+              before meshing. Everything in the case setup (domain bounds,
+              refinement regions, boundary conditions) must agree on meters.
+            </p>
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              onClick={() => setPendingFile(null)}
+              className="px-4 py-2 text-[13px] transition-colors duration-100"
+              style={{
+                background: "transparent",
+                border: "1px solid var(--border)",
+                color: "var(--fg)",
+                borderRadius: 0,
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--bg-hover)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+            >
+              Choose different file
+            </button>
+            <button
+              onClick={handleUpload}
+              className="px-6 py-2 font-semibold text-[13px] transition-colors duration-100"
+              style={{
+                background: "var(--accent)",
+                color: "#09090B",
+                borderRadius: 0,
+                border: "none",
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--accent-hover)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.background = "var(--accent)"; }}
+            >
+              Upload &amp; Scale
+            </button>
+          </div>
+        </div>
+      )}
+
       {loading && (
-        <p className="text-[13px] mt-4" style={{ color: "var(--fg-muted)" }}>Uploading geometry...</p>
+        <p className="text-[13px] mt-4" style={{ color: "var(--fg-muted)" }}>
+          Uploading{stlUnit !== "m" ? " and scaling" : ""} geometry...
+        </p>
       )}
 
       {uploadInfo && (
@@ -424,6 +540,7 @@ export default function GeometryStep({
           onClick={() => {
             setMode("choose");
             setUploadedFile(null);
+            setPendingFile(null);
             setUploadInfo(null);
           }}
           className="px-6 py-2 rounded-sm transition-colors duration-100"
