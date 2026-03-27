@@ -158,9 +158,9 @@ function AppShell() {
           </div>
         </nav>
 
-        {/* Side Bar — 250px */}
+        {/* Side Bar — 250px, hidden on narrow viewports */}
         <aside
-          className="flex flex-col shrink-0 overflow-y-auto"
+          className="hidden sm:flex flex-col shrink-0 overflow-y-auto"
           style={{ width: 250, background: "var(--bg-sidebar)" }}
         >
           {/* Sidebar header */}
