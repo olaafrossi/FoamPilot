@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gzip
+import json
 import os
 import re
 import shutil
@@ -46,12 +47,17 @@ async def upload_geometry(
     name: str,
     file: UploadFile = File(...),
     scale: float = Form(1.0),
+    template: str = Form("motorBike"),
 ):
     """Upload an STL/OBJ file, scaffold the case, and auto-generate mesh dicts.
 
     ``scale`` converts geometry coordinates to meters.  Pass 0.001 for
     millimetres, 0.0254 for inches, etc.  The STL vertices are rewritten
     on disk so that every downstream tool sees metre-scale geometry.
+
+    ``template`` selects which template's physics to use as scaffold.
+    Each template has its own boundary conditions, force directions,
+    and domain type (ground_vehicle vs freestream).
     """
 
     # -- Validate case name --
@@ -73,9 +79,25 @@ async def upload_geometry(
     case_path = Path(validate_case_path(name))
     case_path.mkdir(parents=True, exist_ok=True)
 
-    # -- Copy scaffold from motorBike template (system/, 0/ directories) --
-    template_dir = Path(FOAM_TEMPLATES) / "motorBike"
+    # -- Load template physics from template.json --
+    template_dir = Path(FOAM_TEMPLATES) / template
+    if not template_dir.is_dir():
+        # Fall back to motorBike if requested template doesn't exist
+        template_dir = Path(FOAM_TEMPLATES) / "motorBike"
 
+    physics: dict = {}
+    meta_file = template_dir / "template.json"
+    if meta_file.is_file():
+        try:
+            meta = json.loads(meta_file.read_text(encoding="utf-8"))
+            physics = meta.get("physics", {})
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    domain_type = physics.get("domain_type", "ground_vehicle")
+    patch_group = physics.get("patchGroup", "motorBikeGroup")
+
+    # -- Copy scaffold from template (system/, 0/ directories) --
     # Copy system/ directory (controlDict, fvSchemes, fvSolution, meshQualityDict, etc.)
     src_system = template_dir / "system"
     dst_system = case_path / "system"
@@ -89,12 +111,11 @@ async def upload_geometry(
         shutil.copytree(str(src_zero), str(dst_zero))
 
     # -- Rename template patch references to match uploaded geometry --
-    # The template uses "motorBikeGroup" but snappyHexMesh will create
-    # "{stem}Group" based on the uploaded filename.  Replace in both
-    # 0/ (boundary conditions) and system/ (function objects like forceCoeffs).
+    # The template uses its own patchGroup (e.g. "raceCarGroup") but
+    # snappyHexMesh will create "{stem}Group" based on the uploaded filename.
     stl_stem = Path(file.filename).stem  # e.g. "Ahmed" from "Ahmed.stl"
     new_group = f"{stl_stem}Group"
-    if new_group != "motorBikeGroup":
+    if new_group != patch_group:
         for search_dir in [dst_zero, dst_system]:
             if not search_dir.is_dir():
                 continue
@@ -103,8 +124,8 @@ async def upload_geometry(
                     continue
                 try:
                     text = foam_file_path.read_text(encoding="utf-8")
-                    if "motorBikeGroup" in text:
-                        text = text.replace("motorBikeGroup", new_group)
+                    if patch_group in text:
+                        text = text.replace(patch_group, new_group)
                         foam_file_path.write_text(text, encoding="utf-8")
                 except (UnicodeDecodeError, OSError):
                     pass  # skip binary or unreadable files
@@ -153,10 +174,10 @@ async def upload_geometry(
         system_dir = case_path / "system"
         system_dir.mkdir(parents=True, exist_ok=True)
 
-        block_mesh_dict = generate_block_mesh_dict(bbox, file.filename)
+        block_mesh_dict = generate_block_mesh_dict(bbox, file.filename, domain_type)
         (system_dir / "blockMeshDict").write_text(block_mesh_dict, encoding="utf-8")
 
-        snappy_dict = generate_snappy_hex_mesh_dict(bbox, file.filename)
+        snappy_dict = generate_snappy_hex_mesh_dict(bbox, file.filename, domain_type)
         (system_dir / "snappyHexMeshDict").write_text(snappy_dict, encoding="utf-8")
 
         sfe_dict = generate_surface_feature_extract_dict(file.filename)

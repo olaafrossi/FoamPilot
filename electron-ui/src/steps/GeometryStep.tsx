@@ -58,6 +58,7 @@ export default function GeometryStep({
   const [mode, setMode] = useState<Mode>("choose");
   const [templates, setTemplates] = useState<Template[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<Template | null>(null);
+  const [scaffoldTemplate, setScaffoldTemplate] = useState<Template | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -119,6 +120,14 @@ export default function GeometryStep({
 
   const handleSelectTemplate = useCallback(
     async (tmpl: Template) => {
+      // If template has no geometry, auto-switch to upload mode with this template as scaffold
+      if (!tmpl.has_geometry) {
+        setScaffoldTemplate(tmpl);
+        setTemplateName(tmpl.name);
+        setMode("upload");
+        return;
+      }
+
       setSelectedTemplate(tmpl);
       setError(null);
       setLoading(true);
@@ -161,10 +170,11 @@ export default function GeometryStep({
     setLoading(true);
     setError(null);
     const unitOption = UNIT_OPTIONS.find((u) => u.value === stlUnit) ?? UNIT_OPTIONS[0];
+    const tplPath = scaffoldTemplate?.path ?? "motorBike";
     try {
       const name = pendingFile.name.replace(/\.stl$/i, "").replace(/\s+/g, "_").toLowerCase();
       setCaseName(name);
-      const info = await uploadGeometry(name, pendingFile, unitOption.scale);
+      const info = await uploadGeometry(name, pendingFile, unitOption.scale, tplPath);
       setUploadInfo(info);
       setPendingFile(null);
     } catch (e: unknown) {
@@ -172,7 +182,7 @@ export default function GeometryStep({
     } finally {
       setLoading(false);
     }
-  }, [pendingFile, stlUnit, setCaseName]);
+  }, [pendingFile, stlUnit, setCaseName, scaffoldTemplate]);
 
   const handleClassOverride = (value: string) => {
     setClassOverride(value);
@@ -231,7 +241,7 @@ export default function GeometryStep({
               </h3>
             </div>
             <p className="text-[13px]" style={{ color: "var(--fg-muted)" }}>
-              Use a pre-configured case — Ahmed body, NACA airfoil, and more.
+              Use a pre-configured case — race car, drone, plane, and more.
             </p>
           </button>
 
@@ -387,6 +397,9 @@ export default function GeometryStep({
 
   // --- Template mode ---
   if (mode === "template") {
+    const aeroTemplates = templates.filter((t) => t.category !== "learning");
+    const learningTemplates = templates.filter((t) => t.category === "learning");
+
     return (
       <div>
         <h2
@@ -403,35 +416,12 @@ export default function GeometryStep({
           <div className="text-[13px] mb-4" style={{ color: "var(--error)" }}>{error}</div>
         )}
 
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          {templates.map((tmpl) => (
-            <button
-              key={tmpl.name}
-              onClick={() => handleSelectTemplate(tmpl)}
-              disabled={loading}
-              className="p-4 text-left transition-all duration-200"
-              style={{
-                background: "var(--bg-surface)",
-                border: selectedTemplate?.name === tmpl.name
-                  ? "1px solid var(--accent)"
-                  : "1px solid var(--border)",
-                borderRadius: 0,
-                opacity: loading ? 0.5 : 1,
-                cursor: loading ? "wait" : "pointer",
-                boxShadow: selectedTemplate?.name === tmpl.name
-                  ? "0 0 0 1px rgba(245, 158, 11, 0.2)"
-                  : "none",
-              }}
-              onMouseEnter={(e) => {
-                if (selectedTemplate?.name !== tmpl.name) {
-                  (e.currentTarget as HTMLElement).style.borderColor = "var(--fg-muted)";
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (selectedTemplate?.name !== tmpl.name) {
-                  (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
-                }
-              }}
+        {/* External Aero templates */}
+        {aeroTemplates.length > 0 && (
+          <>
+            <h3
+              className="mb-3 text-[16px]"
+              style={{ fontWeight: 700, fontFamily: "var(--font-display)", color: "var(--fg)" }}
             >
               {/* Template thumbnail placeholder */}
               <div
@@ -541,6 +531,35 @@ export default function GeometryStep({
         <div className="text-[13px] mb-4" style={{ color: "var(--error)" }}>{error}</div>
       )}
 
+      {/* Physics scaffold banner */}
+      {scaffoldTemplate && (
+        <div
+          className="p-4 mb-4 max-w-xl flex gap-3 items-start"
+          style={{
+            background: "var(--bg-surface)",
+            borderLeft: "2px solid var(--accent)",
+            border: "1px solid var(--border)",
+            borderLeftColor: "var(--accent)",
+            borderLeftWidth: 2,
+            borderRadius: 0,
+          }}
+        >
+          <Info size={16} className="shrink-0 mt-0.5" style={{ color: "var(--accent)" }} />
+          <div>
+            <p className="text-[13px] font-semibold mb-1" style={{ color: "var(--fg)", fontFamily: "var(--font-display)" }}>
+              Using {scaffoldTemplate.name} physics
+            </p>
+            <p className="text-[11px]" style={{ color: "var(--fg-muted)" }}>
+              {scaffoldTemplate.domain_type === "freestream"
+                ? "Freestream domain — no ground plane. "
+                : "Ground-effect domain — moving road surface. "}
+              Upload your geometry below and the boundary conditions, solver settings, and
+              force coefficients will be configured for this template.
+            </p>
+          </div>
+        </div>
+      )}
+
       {!uploadInfo && !pendingFile && (
         <div
           onDragOver={(e) => {
@@ -635,11 +654,9 @@ export default function GeometryStep({
             <Info size={16} className="shrink-0 mt-0.5" style={{ color: "var(--accent)" }} />
             <p className="text-[12px] leading-relaxed" style={{ color: "var(--fg-muted)" }}>
               OpenFOAM works in SI units (meters). Most CAD tools export STL
-              files in millimeters. The motorBike tutorial ships its STL
-              already scaled to meters — if your geometry was exported in mm,
+              files in millimeters. If your geometry was exported in mm,
               select "Millimeters" above and the vertices will be rescaled
-              before meshing. Everything in the case setup (domain bounds,
-              refinement regions, boundary conditions) must agree on meters.
+              before meshing.
             </p>
           </div>
 
@@ -704,6 +721,12 @@ export default function GeometryStep({
             <p className="text-[13px]" style={{ color: "var(--fg)" }}>
               <span style={{ color: "var(--fg-muted)" }}>Case name:</span> {caseName}
             </p>
+            {scaffoldTemplate && (
+              <p className="text-[13px]" style={{ color: "var(--fg)" }}>
+                <span style={{ color: "var(--fg-muted)" }}>Physics:</span>{" "}
+                {scaffoldTemplate.name}
+              </p>
+            )}
           </div>
           {caseName && (
             <div className="flex-1" style={{ minHeight: 300 }}>
@@ -718,7 +741,13 @@ export default function GeometryStep({
       <div className="flex justify-between mt-6">
         <button
           onClick={() => {
-            setMode("choose");
+            if (scaffoldTemplate) {
+              // Go back to template picker, not choose mode
+              setScaffoldTemplate(null);
+              setMode("template");
+            } else {
+              setMode("choose");
+            }
             setUploadedFile(null);
             setPendingFile(null);
             setUploadInfo(null);
@@ -754,5 +783,78 @@ export default function GeometryStep({
         </button>
       </div>
     </div>
+  );
+}
+
+
+// --- Template Card Component ---
+
+function TemplateCard({
+  tmpl,
+  Icon,
+  selected,
+  loading,
+  onSelect,
+}: {
+  tmpl: Template;
+  Icon: typeof Bike;
+  selected: boolean;
+  loading: boolean;
+  onSelect: (tmpl: Template) => void;
+}) {
+  return (
+    <button
+      onClick={() => onSelect(tmpl)}
+      disabled={loading}
+      aria-pressed={selected}
+      className="p-4 text-left transition-all duration-200"
+      style={{
+        background: "var(--bg-surface)",
+        border: selected
+          ? "1px solid var(--accent)"
+          : "1px solid var(--border)",
+        borderRadius: 0,
+        opacity: loading ? 0.5 : 1,
+        cursor: loading ? "wait" : "pointer",
+        boxShadow: selected
+          ? "0 0 0 1px rgba(245, 158, 11, 0.2)"
+          : "none",
+      }}
+      onMouseEnter={(e) => {
+        if (!selected) {
+          (e.currentTarget as HTMLElement).style.borderColor = "var(--fg-muted)";
+        }
+      }}
+      onMouseLeave={(e) => {
+        if (!selected) {
+          (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+        }
+      }}
+    >
+      <div className="flex items-center gap-2 mb-1.5">
+        <Icon size={16} style={{ color: "var(--accent)" }} />
+        <h3 className="font-semibold text-[13px] flex-1" style={{ color: "var(--fg)" }}>{tmpl.name}</h3>
+        {tmpl.difficulty && (
+          <span
+            className="text-[11px] px-1.5 py-0.5"
+            style={{
+              color: "var(--fg-muted)",
+              background: "var(--bg-elevated)",
+              borderRadius: 2,
+            }}
+          >
+            {tmpl.difficulty}
+          </span>
+        )}
+      </div>
+      <p className="text-[11px] leading-relaxed" style={{ color: "var(--fg-muted)" }}>
+        {tmpl.description}
+      </p>
+      {!tmpl.has_geometry && tmpl.category !== "learning" && (
+        <p className="text-[11px] mt-1.5" style={{ color: "var(--accent)" }}>
+          Bring your own STL
+        </p>
+      )}
+    </button>
   );
 }

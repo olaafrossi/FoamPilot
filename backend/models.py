@@ -126,6 +126,10 @@ class TemplateInfo(BaseModel):
     learning_objectives: list[str] = []
     fields: list[str] = []
     steps: dict[str, TemplateStepInfo] = {}
+    source: str = "builtin"
+    domain_type: str = ""
+    has_geometry: bool = False
+    category: str = ""
 
 
 # ── Field data (3D visualization) ─────────────────────────────────

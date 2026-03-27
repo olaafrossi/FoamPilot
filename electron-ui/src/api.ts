@@ -90,6 +90,7 @@ export async function uploadGeometry(
   caseName: string,
   file: File,
   scale: number = 1.0,
+  template: string = "motorBike",
 ): Promise<{
   filename: string;
   triangles: number;
@@ -98,6 +99,7 @@ export async function uploadGeometry(
   const formData = new FormData();
   formData.append("file", file);
   formData.append("scale", scale.toString());
+  formData.append("template", template);
   const res = await fetch(api(`/cases/${caseName}/upload-geometry`), {
     method: "POST",
     body: formData,

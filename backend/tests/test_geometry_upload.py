@@ -1,7 +1,8 @@
-"""Tests for geometry upload — .foam file auto-creation."""
+"""Tests for geometry upload — .foam file auto-creation and template-aware scaffolding."""
 
 from __future__ import annotations
 
+import json
 import struct
 from pathlib import Path
 
@@ -85,3 +86,113 @@ def test_upload_geometry_foam_file_idempotent(tmp_foam_run, tmp_foam_templates):
 
     foam_file = tmp_foam_run / "testcase2" / "testcase2.foam"
     assert foam_file.exists()
+
+
+@pytest.fixture(autouse=False)
+def _patch_geometry_templates(tmp_foam_templates, monkeypatch):
+    """Patch FOAM_TEMPLATES in the geometry router module (it imports the constant directly)."""
+    import routers.geometry as geo
+    monkeypatch.setattr(geo, "FOAM_TEMPLATES", str(tmp_foam_templates))
+
+
+def _make_template_scaffold(templates_dir: Path, name: str, patch_group: str, domain_type: str = "ground_vehicle"):
+    """Create a minimal template with template.json, system/, 0/, constant/."""
+    tpl = templates_dir / name
+    (tpl / "system").mkdir(parents=True)
+    (tpl / "constant").mkdir(parents=True)
+    (tpl / "0").mkdir(parents=True)
+
+    # Write a forceCoeffs file referencing the patch group
+    (tpl / "system" / "forceCoeffs").write_text(
+        f"patches ({patch_group});\nlRef 1.0;\nAref 1.0;\n",
+        encoding="utf-8",
+    )
+
+    # Write template.json with physics
+    meta = {
+        "name": f"{name} (simpleFoam)",
+        "solver": "simpleFoam",
+        "physics": {
+            "domain_type": domain_type,
+            "velocity": [20, 0, 0],
+            "patchGroup": patch_group,
+            "liftDir": [0, 0, 1],
+            "dragDir": [1, 0, 0],
+            "pitchAxis": [0, 1, 0],
+            "CofR": [0, 0, 0],
+            "magUInf": 20,
+            "lRef": 1.0,
+            "Aref": 1.0,
+            "turbulentKE": 0.24,
+            "turbulentOmega": 1.78,
+        },
+    }
+    (tpl / "template.json").write_text(json.dumps(meta), encoding="utf-8")
+    return tpl
+
+
+def test_upload_geometry_with_template_param(tmp_foam_run, tmp_foam_templates, _patch_geometry_templates):
+    """Passing template='raceCar' should scaffold from raceCar, not motorBike."""
+    _make_template_scaffold(tmp_foam_templates, "raceCar", "raceCarGroup")
+    # Also need motorBike as fallback
+    _make_template_scaffold(tmp_foam_templates, "motorBike", "motorBikeGroup")
+
+    stl_data = _make_binary_stl()
+
+    client = TestClient(app)
+    resp = client.post(
+        "/cases/mycar/upload-geometry",
+        files={"file": ("car.stl", stl_data, "application/octet-stream")},
+        data={"template": "raceCar"},
+    )
+
+    assert resp.status_code == 200
+
+    # Verify system/ was copied from raceCar
+    force_file = tmp_foam_run / "mycar" / "system" / "forceCoeffs"
+    assert force_file.exists()
+    text = force_file.read_text(encoding="utf-8")
+    # Should have been replaced: raceCarGroup → carGroup
+    assert "carGroup" in text
+    assert "raceCarGroup" not in text
+
+
+def test_upload_geometry_default_template(tmp_foam_run, tmp_foam_templates, _patch_geometry_templates):
+    """Without template param, should default to motorBike scaffold."""
+    _make_template_scaffold(tmp_foam_templates, "motorBike", "motorBikeGroup")
+
+    stl_data = _make_binary_stl()
+
+    client = TestClient(app)
+    resp = client.post(
+        "/cases/defaultcase/upload-geometry",
+        files={"file": ("bike.stl", stl_data, "application/octet-stream")},
+    )
+
+    assert resp.status_code == 200
+
+    # Should scaffold from motorBike (the default)
+    force_file = tmp_foam_run / "defaultcase" / "system" / "forceCoeffs"
+    assert force_file.exists()
+    text = force_file.read_text(encoding="utf-8")
+    # motorBikeGroup → bikeGroup
+    assert "bikeGroup" in text
+
+
+def test_upload_geometry_nonexistent_template_falls_back(tmp_foam_run, tmp_foam_templates, _patch_geometry_templates):
+    """If requested template doesn't exist, fall back to motorBike."""
+    _make_template_scaffold(tmp_foam_templates, "motorBike", "motorBikeGroup")
+
+    stl_data = _make_binary_stl()
+
+    client = TestClient(app)
+    resp = client.post(
+        "/cases/fallbackcase/upload-geometry",
+        files={"file": ("part.stl", stl_data, "application/octet-stream")},
+        data={"template": "nonExistentTemplate"},
+    )
+
+    assert resp.status_code == 200
+    # Should have fallen back to motorBike
+    force_file = tmp_foam_run / "fallbackcase" / "system" / "forceCoeffs"
+    assert force_file.exists()
