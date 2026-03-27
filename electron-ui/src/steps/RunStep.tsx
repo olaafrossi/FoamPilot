@@ -77,13 +77,17 @@ export default function RunStep({
   const wsRef = useRef<WebSocket | null>(null);
   const stopwatch = useStopwatch();
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const { setWorking } = useStatus();
+  const { setWorking, setElapsed } = useStatus();
 
-  // Sync running state to global status bar
+  // Sync running state and elapsed time to global status bar
   useEffect(() => {
     setWorking(running);
     return () => setWorking(false);
   }, [running, setWorking]);
+
+  useEffect(() => {
+    setElapsed(stopwatch.elapsed);
+  }, [stopwatch.elapsed, setElapsed]);
 
   // Buffer for log lines to avoid overwhelming React
   const lineBufferRef = useRef<string[]>([]);
@@ -280,9 +284,6 @@ export default function RunStep({
             <span className="text-[var(--fg-muted)] text-[13px] animate-amber-dot">
               Running... iteration {currentIteration}
             </span>
-            <span className="text-[#858585] text-[13px] font-mono tabular-nums">
-              {formatElapsed(stopwatch.elapsed)}
-            </span>
           </>
         )}
         {finished && (
@@ -331,7 +332,7 @@ export default function RunStep({
                 }}
                 labelStyle={{ color: "var(--fg-muted)" }}
               />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Legend wrapperStyle={{ fontSize: 12 }} align="left" verticalAlign="bottom" />
               {[...activeFields].map((field) => (
                 <Line
                   key={field}

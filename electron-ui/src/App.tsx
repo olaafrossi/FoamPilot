@@ -4,6 +4,7 @@ import { Rocket, FolderOpen, LayoutDashboard, Terminal, FileText, Settings } fro
 import { setConfig } from "./api";
 import type { AppConfig } from "./types";
 import { StatusProvider, useStatus } from "./hooks/useStatus";
+import { formatElapsed } from "./hooks/useStopwatch";
 import WizardPage from "./pages/WizardPage";
 import MySimulationsPage from "./pages/MySimulationsPage";
 import SettingsPage from "./pages/SettingsPage";
@@ -243,6 +244,11 @@ function AppShell() {
       >
         <span style={{ color: "var(--accent)" }} className={status.working ? "animate-pulse" : ""}>●</span>
         <span className="ml-[6px]">FoamPilot — {status.working ? "Working" : "Ready"}</span>
+        {status.working && status.elapsed > 0 && (
+          <span className="ml-[6px]">
+            — {formatElapsed(status.elapsed)}
+          </span>
+        )}
       </footer>
     </div>
   );

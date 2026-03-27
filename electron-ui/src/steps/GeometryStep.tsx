@@ -38,11 +38,33 @@ export default function GeometryStep({
   } | null>(null);
 
   useEffect(() => {
-    if (mode === "template") {
+    if (mode !== "template") return;
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+
+    const load = () => {
       fetchTemplates()
-        .then(setTemplates)
-        .catch((e) => setError(e.message));
-    }
+        .then((t) => {
+          if (!cancelled) {
+            setTemplates(t);
+            setError(null);
+          }
+        })
+        .catch((e) => {
+          if (!cancelled) {
+            setError(e.message);
+            // Retry every 3s so the error auto-clears when the backend recovers
+            retryTimer = setTimeout(load, 3000);
+          }
+        });
+    };
+
+    load();
+
+    return () => {
+      cancelled = true;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
   }, [mode]);
 
   const handleSelectTemplate = useCallback(
