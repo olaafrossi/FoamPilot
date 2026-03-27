@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { LayoutGrid, Upload } from "lucide-react";
 import { fetchTemplates, createCase, deleteCase, uploadGeometry } from "../api";
 import type { Template } from "../types";
+import MeshPreview from "../components/MeshPreview";
 
 interface StepProps {
   caseName: string | null;
@@ -366,25 +367,33 @@ export default function GeometryStep({
       )}
 
       {uploadInfo && (
-        <div
-          className="p-4 max-w-md mb-4"
-          style={{
-            background: "var(--bg-surface)",
-            border: "1px solid var(--border)",
-            borderRadius: 0,
-          }}
-        >
-          <p className="text-[13px]" style={{ color: "var(--fg)" }}>
-            <span style={{ color: "var(--fg-muted)" }}>File:</span>{" "}
-            {uploadInfo.filename}
-          </p>
-          <p className="text-[13px]" style={{ color: "var(--fg)" }}>
-            <span style={{ color: "var(--fg-muted)" }}>Triangles:</span>{" "}
-            {uploadInfo.triangles.toLocaleString()}
-          </p>
-          <p className="text-[13px]" style={{ color: "var(--fg)" }}>
-            <span style={{ color: "var(--fg-muted)" }}>Case name:</span> {caseName}
-          </p>
+        <div className="flex gap-4 mb-4 max-w-3xl">
+          <div
+            className="p-4 shrink-0"
+            style={{
+              background: "var(--bg-surface)",
+              border: "1px solid var(--border)",
+              borderRadius: 0,
+              minWidth: 200,
+            }}
+          >
+            <p className="text-[13px]" style={{ color: "var(--fg)" }}>
+              <span style={{ color: "var(--fg-muted)" }}>File:</span>{" "}
+              {uploadInfo.filename}
+            </p>
+            <p className="text-[13px]" style={{ color: "var(--fg)" }}>
+              <span style={{ color: "var(--fg-muted)" }}>Triangles:</span>{" "}
+              {uploadInfo.triangles.toLocaleString()}
+            </p>
+            <p className="text-[13px]" style={{ color: "var(--fg)" }}>
+              <span style={{ color: "var(--fg-muted)" }}>Case name:</span> {caseName}
+            </p>
+          </div>
+          {caseName && (
+            <div className="flex-1" style={{ minHeight: 300 }}>
+              <MeshPreview caseName={caseName} />
+            </div>
+          )}
         </div>
       )}
 
