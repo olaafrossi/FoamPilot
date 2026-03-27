@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 
 from fastapi import FastAPI
@@ -9,7 +10,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from routers import cases, files, geometry, pipeline, runner, suggestions
 
-app = FastAPI(title="FoamPilot", version="0.1.0")
+VERSION = os.environ.get("FOAMPILOT_VERSION", "0.1.0")
+
+app = FastAPI(title="FoamPilot", version=VERSION)
 
 # ── CORS (allow everything in dev; tighten for prod) ─────────────────
 
@@ -48,7 +51,7 @@ async def health():
     except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
         openfoam_ok = False
 
-    return {"status": "ok", "openfoam": openfoam_ok}
+    return {"status": "ok", "version": VERSION, "openfoam": openfoam_ok}
 
 
 @app.get("/config")

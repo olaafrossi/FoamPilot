@@ -1,8 +1,12 @@
 import { app, BrowserWindow, ipcMain, shell, dialog, Notification } from "electron";
 import * as path from "path";
 import * as fs from "fs";
+import { DockerManager } from "./docker-manager";
+import { UpdateManager } from "./update-manager";
 
 let mainWindow: BrowserWindow | null = null;
+let dockerManager: DockerManager;
+let updateManager: UpdateManager;
 
 // Load config from settings.json next to the executable (or project root in dev)
 function loadConfig(): { backendUrl: string; localCasesPath: string; paraViewPath: string; cores: number } {
@@ -50,14 +54,19 @@ function createWindow() {
   });
 }
 
-// IPC handlers
+function sendToRenderer(channel: string, ...args: any[]) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(channel, ...args);
+  }
+}
+
+// ── Existing IPC handlers ─────────────────────────────────────────────
 ipcMain.handle("get-config", () => loadConfig());
 
 ipcMain.handle("open-paraview", async (_, casePath: string) => {
   const config = loadConfig();
   const foamFile = path.join(casePath, path.basename(casePath) + ".foam");
 
-  // Create .foam file if it doesn't exist (ParaView needs it)
   if (!fs.existsSync(foamFile)) {
     fs.writeFileSync(foamFile, "");
   }
@@ -97,7 +106,133 @@ ipcMain.handle("show-notification", async (_, title: string, body: string) => {
   return false;
 });
 
-app.whenReady().then(createWindow);
+// ── Docker IPC handlers ───────────────────────────────────────────────
+
+ipcMain.handle("docker:status", async () => {
+  const docker = await dockerManager.checkDocker();
+  const compose = await dockerManager.checkCompose();
+  const container = await dockerManager.status();
+  return { ...docker, composeAvailable: compose, container };
+});
+
+ipcMain.handle("docker:pull", async (_, tag?: string) => {
+  try {
+    await dockerManager.pull(tag, (line) => {
+      sendToRenderer("docker:progress", line);
+    });
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle("docker:start", async () => {
+  try {
+    // Check port availability first
+    const portFree = await dockerManager.checkPort(8000);
+    if (!portFree) {
+      return { ok: false, error: "Port 8000 is already in use by another process" };
+    }
+    await dockerManager.up();
+    // Wait for health
+    const healthy = await dockerManager.healthCheck();
+    sendToRenderer("docker:status-change", { container: healthy ? "running" : "unhealthy" });
+    return { ok: true, healthy };
+  } catch (e: any) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle("docker:stop", async () => {
+  try {
+    await dockerManager.down();
+    sendToRenderer("docker:status-change", { container: "stopped" });
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle("docker:ensure-setup", async () => {
+  try {
+    await dockerManager.ensureDataDir();
+    const config = loadConfig();
+    await dockerManager.writeEnvFile(config);
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle("docker:health", async () => {
+  return dockerManager.healthCheck();
+});
+
+// ── Update IPC handlers ──────────────────────────────────────────────
+
+ipcMain.handle("update:check", async () => {
+  const containerUpdate = await updateManager.checkForContainerUpdate();
+  return { container: containerUpdate };
+});
+
+ipcMain.handle("update:apply-container", async (_, tag: string) => {
+  try {
+    await updateManager.applyContainerUpdate(tag, (line) => {
+      sendToRenderer("docker:progress", line);
+    });
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle("update:app-version", () => {
+  return app.getVersion();
+});
+
+// ── App lifecycle ─────────────────────────────────────────────────────
+
+app.whenReady().then(async () => {
+  createWindow();
+
+  // Initialize Docker manager
+  dockerManager = new DockerManager();
+  updateManager = new UpdateManager(dockerManager);
+
+  // Forward update events to renderer
+  updateManager.on("electron-update-available", (info) => {
+    sendToRenderer("update:available", { type: "electron", ...info });
+  });
+  updateManager.on("electron-update-downloaded", (info) => {
+    sendToRenderer("update:downloaded", info);
+  });
+  updateManager.on("container-update-available", (info) => {
+    sendToRenderer("update:available", { type: "container", ...info });
+  });
+
+  // Run startup sequence (non-blocking — renderer shows setup UI)
+  try {
+    await dockerManager.ensureDataDir();
+    const config = loadConfig();
+    await dockerManager.writeEnvFile(config);
+  } catch {
+    // Setup page will handle this
+  }
+
+  // Check for updates (non-blocking)
+  updateManager.checkForElectronUpdate();
+  updateManager.checkForContainerUpdate();
+});
+
+app.on("will-quit", async (e) => {
+  e.preventDefault();
+  try {
+    await dockerManager.down();
+  } catch {
+    // Best effort
+  }
+  app.exit(0);
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

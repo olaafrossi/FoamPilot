@@ -1,5 +1,8 @@
 FROM ubuntu:24.04
 
+LABEL org.opencontainers.image.source="https://github.com/olaafrossi/FoamPilot"
+LABEL org.opencontainers.image.description="FoamPilot OpenFOAM backend"
+
 ARG DEBIAN_FRONTEND=noninteractive
 
 # ── System packages ──────────────────────────────────────────────────

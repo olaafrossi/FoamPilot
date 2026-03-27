@@ -1,0 +1,17 @@
+services:
+  foampilot:
+    image: ghcr.io/olaafrossi/foampilot:${FOAMPILOT_VERSION:-latest}
+    ports:
+      - "${FOAMPILOT_PORT:-8000}:8000"
+    volumes:
+      - ${FOAMPILOT_CASES}:/home/openfoam/run
+      - ${FOAMPILOT_TEMPLATES}:/home/openfoam/templates
+    environment:
+      FOAM_RUN: /home/openfoam/run
+      FOAM_TEMPLATES: /home/openfoam/templates
+      FOAM_CORES: ${FOAM_CORES:-4}
+    deploy:
+      resources:
+        limits:
+          cpus: "${DOCKER_CPUS:-4}"
+          memory: "${DOCKER_MEMORY:-8g}"

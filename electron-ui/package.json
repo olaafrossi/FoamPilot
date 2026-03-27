@@ -32,7 +32,42 @@
     "vitest": "^4.1.2",
     "wait-on": "^8.0.5"
   },
+  "build": {
+    "appId": "com.foampilot.app",
+    "productName": "FoamPilot",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "olaafrossi",
+        "repo": "FoamPilot"
+      }
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "linux": {
+      "target": "AppImage"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../docker/docker-compose.prod.yml",
+        "to": "docker-compose.yml"
+      }
+    ]
+  },
   "dependencies": {
+    "electron-updater": "^6.3.9",
     "@monaco-editor/react": "^4.7.0",
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.5.0",
