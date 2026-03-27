@@ -25,6 +25,7 @@ from models import (
 from services.foam_runner import (
     FOAM_RUN,
     FOAM_TEMPLATES,
+    FOAM_USER_TEMPLATES,
     validate_case_path,
 )
 from services.pipeline_service import (
@@ -236,12 +237,13 @@ async def reset_pipeline_step(case_name: str, step: str, req: PipelineResetReque
 # ── Templates with metadata ─────────────────────────────────────────
 
 
-@router.get("/templates", response_model=list[TemplateInfo])
-async def list_templates_with_metadata():
-    """List available templates with metadata from template.json files."""
-    tpl_dir = Path(FOAM_TEMPLATES)
+def _scan_template_dir(tpl_dir: Path, source: str) -> list[TemplateInfo]:
+    """Scan a directory for valid OpenFOAM templates and return metadata."""
     if not tpl_dir.is_dir():
         return []
+
+    # Templates whose solver is simpleFoam (external aero) vs learning cases
+    _LEARNING_SOLVERS = {"icoFoam"}
 
     templates = []
     for entry in sorted(tpl_dir.iterdir()):
@@ -250,7 +252,7 @@ async def list_templates_with_metadata():
 
         # Check for template.json metadata
         meta_file = entry / "template.json"
-        meta = {}
+        meta: dict = {}
         if meta_file.is_file():
             try:
                 meta = json.loads(meta_file.read_text(encoding="utf-8"))
@@ -275,18 +277,50 @@ async def list_templates_with_metadata():
                     tip=step_data.get("tip", ""),
                 )
 
+        # Extract physics metadata
+        physics = meta.get("physics", {})
+        domain_type = physics.get("domain_type", "")
+        solver = meta.get("solver", "")
+
+        # Detect if sample geometry exists
+        tri_dir = case_dir / "constant" / "triSurface"
+        has_geometry = tri_dir.is_dir() and any(tri_dir.iterdir()) if tri_dir.is_dir() else False
+
+        # Categorize: external aero vs learning
+        category = "learning" if solver in _LEARNING_SOLVERS else "aero"
+
         templates.append(
             TemplateInfo(
                 name=meta.get("name", entry.name),
                 path=entry.name,
                 description=meta.get("description", ""),
                 difficulty=meta.get("difficulty", ""),
-                solver=meta.get("solver", ""),
+                solver=solver,
                 estimated_runtime=meta.get("estimated_runtime", ""),
                 learning_objectives=meta.get("learning_objectives", []),
                 fields=meta.get("fields", []),
                 steps=steps,
+                source=source,
+                domain_type=domain_type,
+                has_geometry=has_geometry,
+                category=category,
             )
         )
+
+    return templates
+
+
+@router.get("/templates", response_model=list[TemplateInfo])
+async def list_templates_with_metadata():
+    """List available templates with metadata from template.json files.
+
+    Scans both the built-in templates directory (FOAM_TEMPLATES) and the
+    user templates directory (FOAM_USER_TEMPLATES) if configured.
+    """
+    templates = _scan_template_dir(Path(FOAM_TEMPLATES), "builtin")
+
+    if FOAM_USER_TEMPLATES:
+        user_dir = Path(FOAM_USER_TEMPLATES)
+        templates.extend(_scan_template_dir(user_dir, "user"))
 
     return templates

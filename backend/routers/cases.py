@@ -38,25 +38,6 @@ async def list_cases():
     return cases
 
 
-# ── List templates ───────────────────────────────────────────────────
-
-
-@router.get("/templates", response_model=list[str])
-async def list_templates():
-    """List available OpenFOAM case templates (recursive, returns relative paths)."""
-    tpl_dir = Path(FOAM_TEMPLATES)
-    if not tpl_dir.is_dir():
-        return []
-    templates = []
-    for root, dirs, files in os.walk(tpl_dir):
-        # A directory is a case template if it contains a "system" subdirectory
-        if "system" in dirs:
-            rel = os.path.relpath(root, tpl_dir)
-            templates.append(rel.replace("\\", "/"))
-            dirs.clear()  # don't descend further
-    return sorted(templates)
-
-
 # ── Create case from template ────────────────────────────────────────
 
 

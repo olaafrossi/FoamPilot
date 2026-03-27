@@ -243,15 +243,24 @@ def _foam_file_header(object_name: str, class_name: str = "dictionary") -> str:
 # blockMeshDict generator
 # ---------------------------------------------------------------------------
 
-def generate_block_mesh_dict(bbox: BoundingBox, stl_filename: str) -> str:
+def generate_block_mesh_dict(
+    bbox: BoundingBox,
+    stl_filename: str,
+    domain_type: str = "ground_vehicle",
+) -> str:
     """Generate blockMeshDict string sized to the geometry bounding box.
 
-    Domain sizing rules:
+    Domain sizing rules (ground_vehicle):
       - 5x geometry length upstream, 15x downstream (X direction)
       - 4x geometry width on each side (Y direction)
       - Height from 0 to 8x geometry height (Z direction)
       - Minimum domain of (-5, -4, 0) to (15, 4, 8)
       - ~50 cells per characteristic length
+
+    Domain sizing rules (freestream):
+      - Same X/Y extents as ground_vehicle
+      - Z is symmetric: ±4x geometry height centered on geometry
+      - No ground plane — all boundaries are patches
     """
     char_length = max(bbox.size_x, bbox.size_y, bbox.size_z, 0.01)
 
@@ -260,8 +269,15 @@ def generate_block_mesh_dict(bbox: BoundingBox, stl_filename: str) -> str:
     x_max = max(bbox.max_x + 15.0 * bbox.size_x, 15.0)
     y_min = min(bbox.min_y - 4.0 * bbox.size_y, -4.0)
     y_max = max(bbox.max_y + 4.0 * bbox.size_y, 4.0)
-    z_min = 0.0
-    z_max = max(8.0 * bbox.size_z, 8.0)
+
+    if domain_type == "freestream":
+        # Symmetric domain: geometry floats in center
+        z_min = min(bbox.min_z - 4.0 * bbox.size_z, -4.0)
+        z_max = max(bbox.max_z + 4.0 * bbox.size_z, 4.0)
+    else:
+        # Ground vehicle: floor at z=0
+        z_min = 0.0
+        z_max = max(8.0 * bbox.size_z, 8.0)
 
     # Cell counts: ~50 cells per characteristic length
     cells_per_unit = 50.0 / char_length
@@ -329,7 +345,7 @@ boundary
     }}
     lowerWall
     {{
-        type wall;
+        type {"patch" if domain_type == "freestream" else "wall"};
         faces
         (
             (0 3 2 1)
@@ -355,7 +371,11 @@ boundary
 # snappyHexMeshDict generator
 # ---------------------------------------------------------------------------
 
-def generate_snappy_hex_mesh_dict(bbox: BoundingBox, stl_filename: str) -> str:
+def generate_snappy_hex_mesh_dict(
+    bbox: BoundingBox,
+    stl_filename: str,
+    domain_type: str = "ground_vehicle",
+) -> str:
     """Generate snappyHexMeshDict string for the given geometry."""
     stem = Path(stl_filename).stem  # e.g. "myPart" from "myPart.stl"
     emesh_name = f"{stem}.eMesh"
@@ -365,7 +385,10 @@ def generate_snappy_hex_mesh_dict(bbox: BoundingBox, stl_filename: str) -> str:
     rb_max_x = bbox.max_x + 3.0 * bbox.size_x
     rb_min_y = bbox.min_y - 0.5 * bbox.size_y
     rb_max_y = bbox.max_y + 0.5 * bbox.size_y
-    rb_min_z = bbox.min_z
+    if domain_type == "freestream":
+        rb_min_z = bbox.min_z - 0.5 * bbox.size_z
+    else:
+        rb_min_z = bbox.min_z
     rb_max_z = bbox.max_z + 1.0 * bbox.size_z
 
     def _fmt(v: float) -> str:
@@ -376,7 +399,10 @@ def generate_snappy_hex_mesh_dict(bbox: BoundingBox, stl_filename: str) -> str:
     # locationInMesh: a point outside the geometry, near domain corner
     loc_x = bbox.max_x + 5.0 * bbox.size_x
     loc_y = bbox.max_y + 3.0 * bbox.size_y
-    loc_z = bbox.center[2] if bbox.center[2] > 0.01 else 0.43
+    if domain_type == "freestream":
+        loc_z = bbox.max_z + 3.0 * bbox.size_z
+    else:
+        loc_z = bbox.center[2] if bbox.center[2] > 0.01 else 0.43
 
     result = _foam_file_header("snappyHexMeshDict")
     result += f"""

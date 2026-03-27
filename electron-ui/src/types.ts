@@ -10,6 +10,12 @@ export interface Template {
   path: string;
   description: string;
   steps: TemplateStep[];
+  difficulty?: string;
+  solver?: string;
+  source?: string;
+  domain_type?: string;
+  has_geometry?: boolean;
+  category?: string;
 }
 
 export interface TemplateStep {

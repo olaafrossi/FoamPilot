@@ -160,6 +160,29 @@ class TestGenerateBlockMeshDict:
         # z_max should be 8
         assert "8" in result
 
+    def test_generate_block_mesh_dict_ground_vehicle(self):
+        """Ground vehicle domain: z_min=0, lowerWall is wall type."""
+        bbox = self._make_bbox(min_x=-1, min_y=-0.5, min_z=0, max_x=1, max_y=0.5, max_z=0.5)
+        result = generate_block_mesh_dict(bbox, "car.stl", domain_type="ground_vehicle")
+
+        # z_min should be 0 (ground plane)
+        # Vertices line: first z coordinate should be 0
+        assert "lowerWall" in result
+        assert 'type wall;' in result
+
+    def test_generate_block_mesh_dict_freestream(self):
+        """Freestream domain: symmetric z, lowerWall is patch (not wall)."""
+        bbox = self._make_bbox(min_x=-0.5, min_y=-0.3, min_z=-0.1, max_x=0.5, max_y=0.3, max_z=0.2)
+        result = generate_block_mesh_dict(bbox, "plane.stl", domain_type="freestream")
+
+        # lowerWall should be type patch, not wall
+        assert "lowerWall" in result
+        assert 'type patch;' in result.split("lowerWall")[1].split("}")[0]
+
+        # z_min should be negative (symmetric domain)
+        # z_min = min(-0.1 - 4*0.3, -4) = min(-1.3, -4) = -4
+        assert "-4" in result or "-1.3" in result
+
 
 # ---------------------------------------------------------------------------
 # snappyHexMeshDict generation
