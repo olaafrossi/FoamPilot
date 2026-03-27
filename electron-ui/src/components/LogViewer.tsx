@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 
 interface LogViewerProps {
   lines: string[];
@@ -84,6 +84,7 @@ export default function LogViewer({ lines, height = "256px" }: LogViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const userScrolledRef = useRef(false);
+  const [showTail, setShowTail] = useState(false);
 
   // Detect whether user has scrolled away from bottom
   const handleScroll = useCallback(() => {
@@ -91,6 +92,12 @@ export default function LogViewer({ lines, height = "256px" }: LogViewerProps) {
     if (!el) return;
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
     userScrolledRef.current = !atBottom;
+    setShowTail(!atBottom);
+  }, []);
+
+  // Jump to the current last line (don't resume auto-scroll)
+  const handleTail = useCallback(() => {
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, []);
 
   // Auto-scroll only when user hasn't scrolled up
@@ -105,38 +112,75 @@ export default function LogViewer({ lines, height = "256px" }: LogViewerProps) {
     : "3ch";
 
   return (
-    <div
-      ref={containerRef}
-      onScroll={handleScroll}
-      className="border border-[#474747] overflow-y-auto font-mono text-[13px] leading-[20px] text-[#cccccc] select-text"
-      style={{ background: "var(--bg-editor)", borderRadius: 0, height }}
-    >
-      <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
-        <colgroup>
-          <col style={{ width: `calc(${gutterWidth} + 24px)` }} />
-          <col />
-        </colgroup>
-        <tbody>
-          {lines.map((line, i) => (
-            <tr key={i} className="hover:bg-[#2a2d2e]">
-              <td
-                className="text-right pr-3 pl-2 select-none text-[#858585] align-top"
-                style={{
-                  width: `calc(${gutterWidth} + 24px)`,
-                  borderRight: "1px solid #333333",
-                  userSelect: "none",
-                }}
-              >
-                {i + 1}
-              </td>
-              <td className="pl-3 pr-2 whitespace-pre-wrap break-all">
-                {colorLine(line)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <div ref={endRef} />
+    <div className="relative border border-[#474747]" style={{ height }}>
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        className="overflow-y-auto font-mono text-[13px] leading-[20px] text-[#cccccc] select-text h-full"
+        style={{ background: "var(--bg-editor)", borderRadius: 0 }}
+      >
+        <table className="w-full border-collapse" style={{ tableLayout: "fixed" }}>
+          <colgroup>
+            <col style={{ width: `calc(${gutterWidth} + 24px)` }} />
+            <col />
+          </colgroup>
+          <tbody>
+            {lines.map((line, i) => (
+              <tr key={i} className="hover:bg-[#2a2d2e]">
+                <td
+                  className="text-right pr-3 pl-2 select-none text-[#858585] align-top"
+                  style={{
+                    width: `calc(${gutterWidth} + 24px)`,
+                    borderRight: "1px solid #333333",
+                    userSelect: "none",
+                  }}
+                >
+                  {i + 1}
+                </td>
+                <td className="pl-3 pr-2 whitespace-pre-wrap break-all">
+                  {colorLine(line)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div ref={endRef} />
+      </div>
+
+      {/* Arrow pinned to the bottom of the gutter — visible when scrolled up */}
+      {showTail && (
+        <button
+          onClick={handleTail}
+          title="Jump to current end"
+          className="absolute flex items-center justify-center hover:bg-[#3c3c3c] text-[#858585] hover:text-[#cccccc] transition-colors"
+          style={{
+            bottom: 0,
+            left: 0,
+            width: `calc(${gutterWidth} + 24px)`,
+            height: 24,
+            borderRight: "1px solid #333333",
+            borderTop: "1px solid #333333",
+            background: "var(--bg-editor)",
+            zIndex: 10,
+          }}
+        >
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 16 16"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M8 3v8m0 0l-3.5-3.5M8 11l3.5-3.5"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </button>
+      )}
     </div>
   );
 }
