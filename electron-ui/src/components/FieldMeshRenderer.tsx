@@ -48,6 +48,8 @@ interface FieldMeshRendererProps {
   showStreamlines?: boolean;
   streamlineSeeds?: number[][];
   patchVisibility?: Record<string, boolean>;
+  rangeMin?: number;
+  rangeMax?: number;
   onLoaded?: () => void;
   onError?: (error: string) => void;
 }
@@ -79,6 +81,8 @@ interface FieldMeshProps {
   opacity: number;
   showWireframe: boolean;
   patchVisibility: Record<string, boolean>;
+  rangeMin: number;
+  rangeMax: number;
   onLoaded?: () => void;
   onError?: (error: string) => void;
 }
@@ -89,6 +93,8 @@ function FieldMesh({
   opacity,
   showWireframe,
   patchVisibility,
+  rangeMin,
+  rangeMax,
   onLoaded,
   onError,
 }: FieldMeshProps) {
@@ -103,11 +109,11 @@ function FieldMesh({
         posArr[i * 3 + 2] = v[2];
       }
 
-      // --- shared vertex colors ---
+      // --- shared vertex colors (use user-adjustable range) ---
       const colArr = new Float32Array(fieldData.vertices.length * 3);
-      const { min, max, values } = fieldData;
+      const { values } = fieldData;
       for (let i = 0; i < values.length; i++) {
-        const c = mapScalarToColor(values[i], min, max, colormap);
+        const c = mapScalarToColor(values[i], rangeMin, rangeMax, colormap);
         colArr[i * 3] = c[0];
         colArr[i * 3 + 1] = c[1];
         colArr[i * 3 + 2] = c[2];
@@ -172,7 +178,7 @@ function FieldMesh({
       onError?.(msg);
       return [];
     }
-  }, [fieldData, colormap, onError]);
+  }, [fieldData, colormap, rangeMin, rangeMax, onError]);
 
   useEffect(() => {
     if (patchGeometries.length > 0) onLoaded?.();
@@ -227,6 +233,8 @@ export default function FieldMeshRenderer({
   showStreamlines = false,
   streamlineSeeds,
   patchVisibility: externalVisibility,
+  rangeMin: externalRangeMin,
+  rangeMax: externalRangeMax,
   onLoaded,
   onError,
 }: FieldMeshRendererProps) {
@@ -320,6 +328,8 @@ export default function FieldMeshRenderer({
           opacity={opacity}
           showWireframe={showWireframe}
           patchVisibility={patchVisibility}
+          rangeMin={externalRangeMin ?? fieldData.min}
+          rangeMax={externalRangeMax ?? fieldData.max}
           onLoaded={onLoaded}
           onError={onError}
         />
