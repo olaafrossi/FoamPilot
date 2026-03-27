@@ -38,6 +38,9 @@ COPY backend/ /app/
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh && chown -R openfoam:openfoam /app
 
+LABEL org.opencontainers.image.source="https://github.com/olaafrossi/FoamPilot"
+LABEL org.opencontainers.image.description="FoamPilot OpenFOAM backend"
+
 WORKDIR /app
 EXPOSE 8000
 

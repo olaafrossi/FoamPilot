@@ -77,6 +77,19 @@ export interface FieldData {
   warning?: string | null;
 }
 
+export interface DockerStatus {
+  installed: boolean;
+  version?: string;
+  running?: boolean;
+  composeAvailable?: boolean;
+}
+
+export interface ContainerUpdateInfo {
+  available: boolean;
+  current: string;
+  latest: string;
+}
+
 // Electron preload API
 declare global {
   interface Window {
@@ -86,6 +99,23 @@ declare global {
       openFolder: (folderPath: string) => Promise<void>;
       selectFile: (filters: { name: string; extensions: string[] }[]) => Promise<string | null>;
       readFile: (filePath: string) => Promise<ArrayBuffer>;
+
+      docker: {
+        getStatus: () => Promise<DockerStatus>;
+        pull: (tag?: string) => Promise<{ ok: boolean }>;
+        start: () => Promise<{ ok: boolean }>;
+        stop: () => Promise<{ ok: boolean }>;
+        getContainerStatus: () => Promise<"running" | "stopped" | "not_found">;
+        getImageVersion: () => Promise<string>;
+        onProgress: (cb: (msg: string) => void) => () => void;
+        onStatusChange: (cb: (status: any) => void) => () => void;
+      };
+
+      updates: {
+        checkContainer: () => Promise<ContainerUpdateInfo | null>;
+        checkElectron: () => Promise<{ ok: boolean }>;
+        onAvailable: (cb: (info: any) => void) => () => void;
+      };
     };
   }
 }

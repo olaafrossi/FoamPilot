@@ -20,6 +20,40 @@
   ],
   "author": "OlaafRossi",
   "license": "MIT",
+  "build": {
+    "appId": "com.foampilot.app",
+    "productName": "FoamPilot",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "olaafrossi",
+        "repo": "FoamPilot"
+      }
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "linux": {
+      "target": "AppImage"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../docker/docker-compose.prod.yml",
+        "to": "docker-compose.yml"
+      }
+    ],
+    "directories": {
+      "output": "dist-electron"
+    }
+  },
   "devDependencies": {
     "@types/three": "^0.183.1",
     "@vitejs/plugin-react": "^6.0.1",
@@ -45,6 +79,7 @@
     "react-router-dom": "^7.13.2",
     "recharts": "^3.8.1",
     "tailwindcss": "^4.2.2",
-    "three": "^0.183.2"
+    "three": "^0.183.2",
+    "electron-updater": "^6.3.9"
   }
 }

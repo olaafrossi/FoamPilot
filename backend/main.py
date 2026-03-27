@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 
 from fastapi import FastAPI
@@ -47,7 +48,8 @@ async def health():
     except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
         openfoam_ok = False
 
-    return {"status": "ok", "openfoam": openfoam_ok}
+    version = os.environ.get("FOAMPILOT_VERSION", "0.1.0")
+    return {"status": "ok", "openfoam": openfoam_ok, "version": version}
 
 
 @app.get("/config")

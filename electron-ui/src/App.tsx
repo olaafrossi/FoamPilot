@@ -8,6 +8,7 @@ import { formatElapsed } from "./hooks/useStopwatch";
 import WizardPage from "./pages/WizardPage";
 import MySimulationsPage from "./pages/MySimulationsPage";
 import SettingsPage from "./pages/SettingsPage";
+import SetupPage from "./pages/SetupPage";
 
 const NAV_ITEMS = [
   { id: "wizard", icon: Rocket, label: "Wizard", path: "/wizard" },
@@ -314,6 +315,8 @@ function PlaceholderPage({ title }: { title: string }) {
 
 export default function App() {
   const [config, setAppConfig] = useState<AppConfig | null>(null);
+  const [dockerReady, setDockerReady] = useState(false);
+  const [updateNotice, setUpdateNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (window.foamPilot?.getConfig) {
@@ -339,6 +342,31 @@ export default function App() {
       setConfig(defaults);
       setAppConfig(defaults);
     }
+
+    // Check Docker status on mount (only in Electron)
+    if (window.foamPilot?.docker) {
+      window.foamPilot.docker.getContainerStatus().then((status) => {
+        if (status === "running") {
+          setDockerReady(true);
+        }
+      }).catch(() => {
+        // Docker API not available (e.g. browser dev mode) — skip setup
+      });
+
+      // Listen for update notifications
+      const cleanup = window.foamPilot.updates.onAvailable((info) => {
+        if (info.type === "electron") {
+          setUpdateNotice(`App update available: v${info.version ?? info.latest}`);
+        } else if (info.type === "container") {
+          setUpdateNotice(`Backend update available: v${info.latest}`);
+        }
+        setTimeout(() => setUpdateNotice(null), 10000);
+      });
+      return cleanup;
+    } else {
+      // Browser dev mode — no Docker needed
+      setDockerReady(true);
+    }
   }, []);
 
   if (!config)
@@ -351,10 +379,30 @@ export default function App() {
       </div>
     );
 
+  // Show setup page when running in Electron and Docker isn't ready
+  if (!dockerReady && window.foamPilot?.docker) {
+    return <SetupPage onReady={() => setDockerReady(true)} />;
+  }
+
   return (
     <HashRouter>
       <StatusProvider>
-        <AppShell />
+        <>
+          <AppShell />
+          {updateNotice && (
+            <div
+              className="fixed bottom-8 right-8 px-4 py-2 text-[13px] font-medium z-50"
+              style={{
+                background: "var(--bg-surface)",
+                border: "1px solid var(--accent)",
+                color: "var(--fg)",
+                boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+              }}
+            >
+              {updateNotice}
+            </div>
+          )}
+        </>
       </StatusProvider>
     </HashRouter>
   );
