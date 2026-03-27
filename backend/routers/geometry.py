@@ -21,6 +21,13 @@ from services.config_generator import (
     stl_bounds,
 )
 from services.foam_runner import FOAM_CORES, FOAM_RUN, FOAM_TEMPLATES, validate_case_path
+from services.field_parser import (
+    discover_available_fields,
+    discover_time_directories,
+    extract_boundary_field_data,
+    resolve_time,
+)
+from services.foam_runner import list_jobs
 from services.parsers import AeroResults, MeshQuality, parse_check_mesh, parse_force_coeffs
 
 router = APIRouter(prefix="/cases", tags=["geometry"])
@@ -249,3 +256,56 @@ async def serve_geometry_file(name: str):
             return FileResponse(str(decompressed), media_type=media, filename=decompressed.name)
 
     raise HTTPException(status_code=404, detail="No geometry file found in triSurface/")
+
+
+# ---------------------------------------------------------------------------
+# GET /cases/{name}/field-data
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{name}/field-data")
+async def field_data(name: str, field: str = "p", time: str = "latest"):
+    """Serve mesh geometry + field values for 3D visualization.
+
+    Returns boundary faces only (surface mesh) with interpolated field values
+    at vertices.  For vector fields (e.g. U) the magnitude is returned in
+    ``values`` and the raw vectors in ``vectors``.
+    """
+    case_path = Path(validate_case_path(name))
+    if not case_path.is_dir():
+        raise HTTPException(status_code=404, detail=f"Case '{name}' not found")
+
+    # Resolve the requested time directory
+    try:
+        resolved_time = resolve_time(case_path, time)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    # Check that the requested field exists
+    available_fields = discover_available_fields(case_path, resolved_time)
+    if field not in available_fields:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Field '{field}' not found in time directory '{resolved_time}'. "
+            f"Available fields: {available_fields}",
+        )
+
+    # Extract boundary mesh + field data
+    try:
+        data = extract_boundary_field_data(case_path, resolved_time, field)
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    # Check for active jobs on this case
+    warning = None
+    for job in list_jobs():
+        if job.case_name == name and job.status in ("queued", "running"):
+            warning = "Simulation still running \u2014 results may be incomplete"
+            break
+
+    return {
+        **data,
+        "available_fields": available_fields,
+        "available_times": discover_time_directories(case_path),
+        "warning": warning,
+    }
