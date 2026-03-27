@@ -423,29 +423,22 @@ export default function GeometryStep({
               className="mb-3 text-[16px]"
               style={{ fontWeight: 700, fontFamily: "var(--font-display)", color: "var(--fg)" }}
             >
-              {/* Template thumbnail placeholder */}
-              <div
-                className="mb-3 flex items-center justify-center text-[11px]"
-                style={{
-                  height: 80,
-                  background: "var(--bg-elevated)",
-                  border: "1px solid var(--border)",
-                  color: "var(--fg-muted)",
-                  overflow: "hidden",
-                }}
-              >
-                <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
-                  <rect x="4" y="12" width="32" height="16" rx="2" stroke="var(--fg-muted)" strokeWidth="1" fill="none" opacity="0.4" />
-                  <path d="M8 20 L16 16 L24 22 L32 18" stroke="var(--accent)" strokeWidth="1.5" fill="none" opacity="0.6" />
-                </svg>
-              </div>
-              <h3 className="font-semibold mb-1 text-[13px]" style={{ color: "var(--fg)" }}>{tmpl.name}</h3>
-              <p className="text-[11px] leading-relaxed" style={{ color: "var(--fg-muted)" }}>
-                {tmpl.description}
-              </p>
-            </button>
-          ))}
-        </div>
+              External Aero
+            </h3>
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 mb-6" role="group" aria-label="External aerodynamics templates">
+              {aeroTemplates.map((tmpl) => (
+                <TemplateCard
+                  key={tmpl.path}
+                  tmpl={tmpl}
+                  Icon={LayoutGrid}
+                  selected={selectedTemplate?.path === tmpl.path}
+                  loading={loading}
+                  onSelect={handleSelectTemplate}
+                />
+              ))}
+            </div>
+          </>
+        )}
 
         {selectedTemplate && !loading && (
           <div
