@@ -45,14 +45,20 @@
 **Context:** Deferred from the wizard-first rearchitecture (CEO review 2026-03-26). The clone API exists. The main work is UI: a results comparison view showing Cd/Cl across multiple runs.
 **Depends on:** Wizard rearchitecture must ship first. Results summary card (forceCoeffs parsing) must exist.
 
-## In-App Pressure Contour Rendering
-**Priority:** P2 | **Effort:** human: ~2 weeks / CC: ~3 hours
-**What:** Extend the WebView2 3D viewer to display pressure/velocity contours on the mesh surface using VTK.js or a custom OpenFOAM → Three.js data pipeline.
-**Why:** The "never leave the app" north star. Users see results without ParaView. Eliminates the biggest external dependency for hobbyists.
-**Pros:** Massive 'whoa' moment. ParaView becomes optional for basic visualization. Keeps the user in the guided flow.
-**Cons:** Requires parsing OpenFOAM field data (binary or ASCII) and mapping to Three.js vertex colors. VTK.js is an option but heavyweight. Custom pipeline is lighter but more work.
-**Context:** Deferred from the wizard-first rearchitecture (CEO review 2026-03-26). The 3D mesh preview (WebView2 + Three.js) ships in this plan — this TODO extends it to show simulation results, not just the mesh.
-**Depends on:** 3D mesh preview (Expansion 1) must ship first. Solver must write results to time directories.
+## In-App Pressure/Velocity Contour Rendering — IN PROGRESS
+**Priority:** P2 | **Status:** In Progress (branch: claude/nice-euclid, 2026-03-27)
+**What:** Custom OpenFOAM → Three.js data pipeline for pressure/velocity contours on mesh surfaces, with streamlines and vector visualization.
+**Implementation:** 4-worktree parallel build: (1) Backend field parser (ASCII+binary OpenFOAM, boundary-only extraction, numpy interpolation), (2) Three.js FieldMeshRenderer with per-vertex coloring, (3) Colormap library (jet/viridis/coolwarm/plasma/inferno) + RK4 streamline tracer, (4) VisualizationPanel UI with field selector, colormap picker, opacity slider, wireframe toggle, streamline toggle, and color legend.
+**Decision:** Chose custom pipeline over VTK.js (lighter, fewer dependencies, sufficient for boundary surface rendering). Backend does the heavy parsing; frontend just maps values to colors.
+
+## Time-Stepping Animation for Transient Results
+**Priority:** P2 | **Effort:** human: ~3 days / CC: ~1 hour
+**What:** Animate through OpenFOAM time directories (0.1s, 0.2s, ...) with a playback scrubber, enabling visualization of flow development over time.
+**Why:** Static contours only show the final state. Engineers need to see how flow develops — vortex shedding, startup effects, transient phenomena. Standard feature in ParaView and Autodesk Flow Design.
+**Pros:** Massive 'whoa' factor. Makes transient simulations useful without ParaView.
+**Cons:** Requires pre-loading or streaming multiple time steps of field data. Memory management becomes important for large meshes with many time steps.
+**Context:** Natural follow-up to static contour visualization (2026-03-27 eng review). The `/field-data` endpoint already supports a `time` parameter and returns `available_times` — the backend infrastructure is ready.
+**Depends on:** Static visualization must ship first. The VisualizationPanel already has a time selector dropdown for individual time steps — animation adds a play/pause button and automatic stepping.
 
 ## AI Mesh Assistant
 **Priority:** P3 | **Effort:** human: ~1 month / CC: ~1 week (research + implementation)

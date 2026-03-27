@@ -3,72 +3,9 @@ import { Canvas, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { RotateCcw } from "lucide-react";
+import { mapScalarToColor } from "../lib/colormap";
+import type { ColorMapName } from "../lib/colormap";
 import type { FieldData } from "../types";
-
-// ---------------------------------------------------------------------------
-// Colormap helpers (placeholder — WT-3 will provide production colormaps)
-// ---------------------------------------------------------------------------
-
-type ColormapName = "jet" | "viridis" | "coolwarm";
-
-interface RGB {
-  r: number;
-  g: number;
-  b: number;
-}
-
-function lerpColor(a: RGB, b: RGB, t: number): RGB {
-  return {
-    r: a.r + (b.r - a.r) * t,
-    g: a.g + (b.g - a.g) * t,
-    b: a.b + (b.b - a.b) * t,
-  };
-}
-
-/** Simple piecewise-linear jet colormap: blue → cyan → green → yellow → red */
-function jetColormap(t: number): RGB {
-  const clamped = Math.max(0, Math.min(1, t));
-  if (clamped < 0.25) {
-    return lerpColor({ r: 0, g: 0, b: 1 }, { r: 0, g: 1, b: 1 }, clamped / 0.25);
-  }
-  if (clamped < 0.5) {
-    return lerpColor({ r: 0, g: 1, b: 1 }, { r: 0, g: 1, b: 0 }, (clamped - 0.25) / 0.25);
-  }
-  if (clamped < 0.75) {
-    return lerpColor({ r: 0, g: 1, b: 0 }, { r: 1, g: 1, b: 0 }, (clamped - 0.5) / 0.25);
-  }
-  return lerpColor({ r: 1, g: 1, b: 0 }, { r: 1, g: 0, b: 0 }, (clamped - 0.75) / 0.25);
-}
-
-/** Approximate viridis: dark purple → teal → yellow */
-function viridisColormap(t: number): RGB {
-  const clamped = Math.max(0, Math.min(1, t));
-  if (clamped < 0.5) {
-    return lerpColor({ r: 0.267, g: 0.004, b: 0.329 }, { r: 0.128, g: 0.567, b: 0.551 }, clamped / 0.5);
-  }
-  return lerpColor({ r: 0.128, g: 0.567, b: 0.551 }, { r: 0.993, g: 0.906, b: 0.144 }, (clamped - 0.5) / 0.5);
-}
-
-/** Approximate coolwarm: blue → white → red */
-function coolwarmColormap(t: number): RGB {
-  const clamped = Math.max(0, Math.min(1, t));
-  if (clamped < 0.5) {
-    return lerpColor({ r: 0.231, g: 0.298, b: 0.753 }, { r: 0.865, g: 0.865, b: 0.865 }, clamped / 0.5);
-  }
-  return lerpColor({ r: 0.865, g: 0.865, b: 0.865 }, { r: 0.706, g: 0.016, b: 0.150 }, (clamped - 0.5) / 0.5);
-}
-
-function getColormapFn(name: ColormapName): (t: number) => RGB {
-  switch (name) {
-    case "viridis":
-      return viridisColormap;
-    case "coolwarm":
-      return coolwarmColormap;
-    case "jet":
-    default:
-      return jetColormap;
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Props
@@ -76,7 +13,7 @@ function getColormapFn(name: ColormapName): (t: number) => RGB {
 
 interface FieldMeshRendererProps {
   fieldData: FieldData | null;
-  colormap?: ColormapName;
+  colormap?: ColorMapName;
   opacity?: number;
   showWireframe?: boolean;
   showStreamlines?: boolean;
@@ -102,7 +39,7 @@ function CameraReset({ resetTrigger }: { resetTrigger: number }) {
 
 interface FieldMeshProps {
   fieldData: FieldData;
-  colormap: ColormapName;
+  colormap: ColorMapName;
   opacity: number;
   showWireframe: boolean;
   onLoaded?: () => void;
@@ -161,18 +98,15 @@ function FieldMesh({
       // --- vertex normals ---
       geo.computeVertexNormals();
 
-      // --- vertex colors ---
-      const colormapFn = getColormapFn(colormap);
+      // --- vertex colors (using production colormap library) ---
       const colArr = new Float32Array(fieldData.vertices.length * 3);
       const { min, max, values } = fieldData;
-      const range = max - min;
 
       for (let i = 0; i < values.length; i++) {
-        const t = range === 0 ? 0.5 : (values[i] - min) / range;
-        const c = colormapFn(t);
-        colArr[i * 3] = c.r;
-        colArr[i * 3 + 1] = c.g;
-        colArr[i * 3 + 2] = c.b;
+        const c = mapScalarToColor(values[i], min, max, colormap);
+        colArr[i * 3] = c[0];
+        colArr[i * 3 + 1] = c[1];
+        colArr[i * 3 + 2] = c[2];
       }
 
       const colorAttr = new THREE.BufferAttribute(colArr, 3);

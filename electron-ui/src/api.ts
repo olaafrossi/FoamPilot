@@ -1,4 +1,4 @@
-import type { AppConfig, Template, JobResponse, MeshQuality, AeroResults, CaseInfo } from "./types";
+import type { AppConfig, Template, JobResponse, MeshQuality, AeroResults, CaseInfo, FieldData } from "./types";
 
 let config: AppConfig = {
   backendUrl: "http://localhost:8000",
@@ -98,6 +98,18 @@ export async function uploadGeometry(caseName: string, file: File): Promise<{
     body: formData,
   });
   if (!res.ok) throw new Error(`Failed to upload geometry: ${res.statusText}`);
+  return res.json();
+}
+
+export async function getFieldData(
+  caseName: string,
+  field: string = "p",
+  time: string = "latest",
+): Promise<FieldData> {
+  const res = await fetch(
+    api(`/cases/${caseName}/field-data?field=${encodeURIComponent(field)}&time=${encodeURIComponent(time)}`),
+  );
+  if (!res.ok) throw new Error(`Failed to get field data: ${res.statusText}`);
   return res.json();
 }
 

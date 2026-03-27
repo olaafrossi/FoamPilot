@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { getResults, getMeshQuality, getConfig } from "../api";
+import VisualizationPanel from "../components/VisualizationPanel";
 import type { AeroResults, MeshQuality } from "../types";
 
 interface StepProps {
@@ -169,6 +170,13 @@ export default function ResultsStep({
             </div>
           )}
         </>
+      )}
+
+      {/* 3D Flow Visualization */}
+      {caseName && (
+        <div className="mb-6">
+          <VisualizationPanel caseName={caseName} />
+        </div>
       )}
 
       {/* Simulation summary */}
