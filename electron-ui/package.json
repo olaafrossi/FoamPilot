@@ -2,12 +2,13 @@
   "name": "foampilot",
   "version": "1.0.0",
   "description": "Aerodynamics made simple — guided OpenFOAM simulations",
-  "main": "electron/main.js",
+  "main": "electron-dist/main.js",
   "scripts": {
     "dev": "vite",
-    "dev:electron": "concurrently \"vite\" \"wait-on http://localhost:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron .\"",
+    "dev:electron": "concurrently \"vite\" \"wait-on http://localhost:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron electron/main.ts\"",
     "build": "tsc && vite build",
-    "build:electron": "npm run build && electron-builder",
+    "build:main": "tsc -p tsconfig.electron.json",
+    "build:electron": "npm run build && npm run build:main && electron-builder",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -56,7 +57,7 @@
     },
     "files": [
       "dist/**/*",
-      "electron/**/*",
+      "electron-dist/**/*",
       "package.json"
     ],
     "extraResources": [

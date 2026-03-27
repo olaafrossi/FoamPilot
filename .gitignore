@@ -422,3 +422,6 @@ templates/
 # OpenFoam Cases
 cases/
 .gstack/
+
+# Electron main process build output
+electron-ui/electron-dist/
