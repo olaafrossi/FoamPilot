@@ -10,6 +10,10 @@ interface StepProps {
   goNext: () => void;
   goBack: () => void;
   completeStep: (step: number) => void;
+  velocity: number;
+  setVelocity: (v: number) => void;
+  geometryClass: string | null;
+  setGeometryClass: (c: string | null) => void;
 }
 
 const SOLVER_FILES = [

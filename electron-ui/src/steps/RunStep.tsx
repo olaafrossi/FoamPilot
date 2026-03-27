@@ -8,11 +8,14 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  ReferenceLine,
 } from "recharts";
+import { AlertTriangle, CheckCircle, TrendingDown, Clock } from "lucide-react";
 import LogViewer from "../components/LogViewer";
 import { useStatus } from "../hooks/useStatus";
-import { runCommands, connectLogs, getJobStatus, cancelJob, getConfig } from "../api";
+import { runCommands, connectLogs, getJobStatus, cancelJob, getConfig, getSuggestions } from "../api";
 import { useStopwatch, formatElapsed } from "../hooks/useStopwatch";
+import type { ConvergencePrediction } from "../types";
 
 interface StepProps {
   caseName: string | null;
@@ -22,6 +25,10 @@ interface StepProps {
   goNext: () => void;
   goBack: () => void;
   completeStep: (step: number) => void;
+  velocity: number;
+  setVelocity: (v: number) => void;
+  geometryClass: string | null;
+  setGeometryClass: (c: string | null) => void;
 }
 
 interface ResidualPoint {
@@ -44,6 +51,12 @@ const FIELD_COLORS: Record<string, string> = {
   omega: "var(--success)",
 };
 
+const CONFIDENCE_COLORS: Record<string, string> = {
+  high: "var(--success)",
+  medium: "var(--warning)",
+  low: "var(--error)",
+};
+
 // Parse: "Solving for Ux, Initial residual = 0.123, Final residual = 0.00456"
 function parseResidualLine(
   line: string,
@@ -61,11 +74,18 @@ function parseTimeStep(line: string): number | null {
   return match ? parseInt(match[1], 10) : null;
 }
 
+// Detect NaN residuals (divergence)
+function hasNaN(line: string): boolean {
+  return /residual\s*=\s*nan/i.test(line) || /\bnan\b/i.test(line);
+}
+
 export default function RunStep({
   caseName,
   goNext,
   goBack,
   completeStep,
+  velocity,
+  geometryClass,
 }: StepProps) {
   const [running, setRunning] = useState(false);
   const [logLines, setLogLines] = useState<string[]>([]);
@@ -79,6 +99,11 @@ export default function RunStep({
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const { setWorking, setElapsed } = useStatus();
 
+  // Convergence predictor state
+  const [prediction, setPrediction] = useState<ConvergencePrediction | null>(null);
+  const [liveStatus, setLiveStatus] = useState<string>("pending");
+  const [diverged, setDiverged] = useState(false);
+
   // Sync running state and elapsed time to global status bar
   useEffect(() => {
     setWorking(running);
@@ -88,6 +113,46 @@ export default function RunStep({
   useEffect(() => {
     setElapsed(stopwatch.elapsed);
   }, [stopwatch.elapsed, setElapsed]);
+
+  // Fetch convergence prediction
+  useEffect(() => {
+    if (!caseName || velocity <= 0) return;
+    let cancelled = false;
+    getSuggestions(caseName, velocity, geometryClass ?? undefined)
+      .then((s) => { if (!cancelled) setPrediction(s.convergence); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [caseName, velocity, geometryClass]);
+
+  // Live convergence status detection
+  useEffect(() => {
+    if (residuals.length < 10) return;
+    const recent = residuals.slice(-10);
+    const pValues = recent.map((r) => r.p).filter((v): v is number => v !== undefined);
+    if (pValues.length < 5) return;
+
+    // Check for NaN (diverged)
+    if (pValues.some((v) => isNaN(v))) {
+      setLiveStatus("diverged");
+      setDiverged(true);
+      return;
+    }
+
+    // Check if residuals are decreasing (converging)
+    const first5 = pValues.slice(0, 5);
+    const last5 = pValues.slice(-5);
+    const avgFirst = first5.reduce((a, b) => a + b, 0) / first5.length;
+    const avgLast = last5.reduce((a, b) => a + b, 0) / last5.length;
+
+    if (avgLast < avgFirst * 0.8) {
+      setLiveStatus("converging");
+    } else if (avgLast > avgFirst * 1.5) {
+      setLiveStatus("diverged");
+      setDiverged(true);
+    } else {
+      setLiveStatus("stalled");
+    }
+  }, [residuals]);
 
   // Buffer for log lines to avoid overwhelming React
   const lineBufferRef = useRef<string[]>([]);
@@ -123,6 +188,8 @@ export default function RunStep({
     setResiduals([]);
     setCurrentIteration(0);
     setFinished(false);
+    setDiverged(false);
+    setLiveStatus("pending");
     lineBufferRef.current = [];
     iterationRef.current = 0;
     stopwatch.start();
@@ -141,6 +208,12 @@ export default function RunStep({
 
       const ws = connectLogs(job.job_id, (line) => {
         lineBufferRef.current.push(line);
+
+        // Check for NaN divergence
+        if (hasNaN(line)) {
+          setDiverged(true);
+          setLiveStatus("diverged");
+        }
 
         // Parse time step
         const timeStep = parseTimeStep(line);
@@ -196,6 +269,10 @@ export default function RunStep({
 
             if (status.status === "completed") {
               setFinished(true);
+              // Toast notification
+              if ("Notification" in window && Notification.permission === "granted") {
+                new Notification("FoamPilot", { body: "Solver run complete" });
+              }
             } else if (status.status === "cancelled") {
               setError("Solver run cancelled.");
             } else {
@@ -248,6 +325,21 @@ export default function RunStep({
     }
   }
 
+  const statusIcon = {
+    pending: <Clock size={14} style={{ color: "var(--fg-muted)" }} />,
+    converging: <TrendingDown size={14} style={{ color: "var(--success)" }} />,
+    stalled: <AlertTriangle size={14} style={{ color: "var(--warning)" }} />,
+    diverged: <AlertTriangle size={14} style={{ color: "var(--error)" }} />,
+    completed: <CheckCircle size={14} style={{ color: "var(--success)" }} />,
+  }[finished ? "completed" : liveStatus] ?? null;
+
+  const statusLabel = finished ? "Completed" : {
+    pending: "Waiting for data...",
+    converging: "Converging",
+    stalled: "Stalled — residuals not decreasing",
+    diverged: "Diverged — NaN residuals detected",
+  }[liveStatus] ?? "Unknown";
+
   return (
     <div className="flex flex-col h-full">
       <h2 style={{ fontFamily: "var(--font-display)", fontWeight: 700, fontSize: 24, marginBottom: 4, color: "var(--fg)" }}>Run Simulation</h2>
@@ -258,6 +350,68 @@ export default function RunStep({
 
       {error && (
         <div className="text-[var(--error)] text-[13px] mb-4">{error}</div>
+      )}
+
+      {/* Convergence predictor card */}
+      {prediction && (
+        <div
+          className="p-4 mb-4"
+          style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              {statusIcon}
+              <span className="text-[13px] font-semibold" style={{ color: "var(--fg)" }}>
+                Convergence: {statusLabel}
+              </span>
+            </div>
+            <span
+              className="text-[11px] px-2 py-0.5"
+              style={{
+                background: `${CONFIDENCE_COLORS[prediction.confidence]}20`,
+                color: CONFIDENCE_COLORS[prediction.confidence],
+                border: `1px solid ${CONFIDENCE_COLORS[prediction.confidence]}40`,
+              }}
+            >
+              {prediction.confidence} confidence
+            </span>
+          </div>
+
+          {!running && !finished && (
+            <p className="text-[12px]" style={{ color: "var(--fg-muted)" }}>
+              Expected ~{prediction.expected_iterations} iterations to converge.
+            </p>
+          )}
+
+          {running && currentIteration > 0 && prediction.expected_iterations > 0 && (
+            <div className="mt-2">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="flex-1 h-1.5" style={{ background: "var(--bg-elevated)" }}>
+                  <div
+                    className="h-full transition-all duration-300"
+                    style={{
+                      width: `${Math.min(100, (currentIteration / prediction.expected_iterations) * 100)}%`,
+                      background: diverged ? "var(--error)" : "var(--accent)",
+                    }}
+                  />
+                </div>
+                <span className="text-[11px]" style={{ color: "var(--fg-muted)" }}>
+                  {currentIteration}/{prediction.expected_iterations}
+                </span>
+              </div>
+            </div>
+          )}
+
+          {prediction.risk_factors.length > 0 && (
+            <div className="mt-2">
+              {prediction.risk_factors.map((risk, i) => (
+                <p key={i} className="text-[11px] flex items-center gap-1" style={{ color: "var(--fg-muted)" }}>
+                  <span style={{ color: "var(--warning)" }}>!</span> {risk}
+                </p>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {/* Controls */}
@@ -333,6 +487,14 @@ export default function RunStep({
                 labelStyle={{ color: "var(--fg-muted)" }}
               />
               <Legend wrapperStyle={{ fontSize: 12 }} align="left" verticalAlign="bottom" />
+              {prediction && (
+                <ReferenceLine
+                  y={prediction.convergence_target ?? 1e-4}
+                  stroke="var(--success)"
+                  strokeDasharray="5 5"
+                  label={{ value: "target", fill: "var(--success)", fontSize: 10, position: "right" }}
+                />
+              )}
               {[...activeFields].map((field) => (
                 <Line
                   key={field}
@@ -346,6 +508,21 @@ export default function RunStep({
               ))}
             </LineChart>
           </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Divergence warning */}
+      {diverged && (
+        <div
+          className="p-3 mb-4 flex items-center gap-2 text-[13px]"
+          style={{
+            background: "rgba(239, 68, 68, 0.08)",
+            border: "1px solid rgba(239, 68, 68, 0.3)",
+            color: "var(--error)",
+          }}
+        >
+          <AlertTriangle size={14} />
+          Divergence detected (NaN residuals). Consider reducing relaxation factors or checking mesh quality.
         </div>
       )}
 

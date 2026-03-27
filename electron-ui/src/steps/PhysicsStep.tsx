@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
+import { Activity } from "lucide-react";
 import FoamEditor from "../components/FoamEditor";
-import { readFile, writeFile } from "../api";
+import { readFile, writeFile, getSuggestions } from "../api";
+import type { PhysicsSuggestion } from "../types";
 
 interface StepProps {
   caseName: string | null;
@@ -10,6 +12,10 @@ interface StepProps {
   goNext: () => void;
   goBack: () => void;
   completeStep: (step: number) => void;
+  velocity: number;
+  setVelocity: (v: number) => void;
+  geometryClass: string | null;
+  setGeometryClass: (c: string | null) => void;
 }
 
 const BC_FILES = [
@@ -50,17 +56,32 @@ const BC_FILES = [
   },
 ];
 
+const REGIME_COLORS: Record<string, string> = {
+  laminar: "var(--info)",
+  transitional: "var(--warning)",
+  turbulent: "var(--success)",
+};
+
+function formatRe(re: number): string {
+  if (re >= 1e6) return `${(re / 1e6).toFixed(2)}M`;
+  if (re >= 1e3) return `${(re / 1e3).toFixed(1)}k`;
+  return re.toFixed(0);
+}
+
 export default function PhysicsStep({
   caseName,
   goNext,
   goBack,
   completeStep,
+  velocity,
+  geometryClass,
 }: StepProps) {
   const [activeTab, setActiveTab] = useState(0);
   const [fileContents, setFileContents] = useState<Record<string, string>>({});
   const [dirty, setDirty] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [physicsSuggestion, setPhysicsSuggestion] = useState<PhysicsSuggestion | null>(null);
 
   // Load all BC files on mount
   useEffect(() => {
@@ -81,6 +102,16 @@ export default function PhysicsStep({
       setLoading(false);
     });
   }, [caseName]);
+
+  // Fetch physics suggestions
+  useEffect(() => {
+    if (!caseName || velocity <= 0) return;
+    let cancelled = false;
+    getSuggestions(caseName, velocity, geometryClass ?? undefined)
+      .then((s) => { if (!cancelled) setPhysicsSuggestion(s.physics); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [caseName, velocity, geometryClass]);
 
   const saveFile = useCallback(
     async (key: string) => {
@@ -118,6 +149,8 @@ export default function PhysicsStep({
   };
 
   const currentFile = BC_FILES[activeTab];
+  const re = physicsSuggestion?.reynolds_number ?? 0;
+  const regime = re < 5e5 ? "laminar" : re < 1e6 ? "transitional" : "turbulent";
 
   return (
     <div>
@@ -128,6 +161,73 @@ export default function PhysicsStep({
 
       {error && (
         <div style={{ color: "var(--error)", fontSize: 13, marginBottom: 16 }}>{error}</div>
+      )}
+
+      {/* Reynolds number dashboard */}
+      {physicsSuggestion && (
+        <div
+          className="p-4 mb-4"
+          style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
+        >
+          <div className="flex items-center gap-2 mb-3">
+            <Activity size={14} style={{ color: "var(--accent)" }} />
+            <span className="text-[13px] font-semibold" style={{ color: "var(--fg)" }}>Flow Conditions</span>
+          </div>
+
+          <div className="grid grid-cols-4 gap-4 mb-3">
+            {/* Reynolds number */}
+            <div>
+              <p className="text-[11px] uppercase tracking-wide mb-1" style={{ color: "var(--fg-muted)", fontWeight: 600 }}>
+                Reynolds Number
+              </p>
+              <p style={{ color: "var(--fg)", fontSize: 20, fontWeight: 600 }}>
+                {formatRe(re)}
+              </p>
+              <div className="flex items-center gap-1 mt-1">
+                <div className="w-1.5 h-1.5 rounded-full" style={{ background: REGIME_COLORS[regime] }} />
+                <span className="text-[11px]" style={{ color: REGIME_COLORS[regime] }}>
+                  {regime.charAt(0).toUpperCase() + regime.slice(1)}
+                </span>
+              </div>
+            </div>
+
+            {/* Turbulence model */}
+            <div>
+              <p className="text-[11px] uppercase tracking-wide mb-1" style={{ color: "var(--fg-muted)", fontWeight: 600 }}>
+                Turbulence Model
+              </p>
+              <p style={{ color: "var(--fg)", fontSize: 16, fontWeight: 600, fontFamily: "var(--font-mono)" }}>
+                {physicsSuggestion.turbulence_model}
+              </p>
+            </div>
+
+            {/* Freestream k */}
+            <div>
+              <p className="text-[11px] uppercase tracking-wide mb-1" style={{ color: "var(--fg-muted)", fontWeight: 600 }}>
+                k (freestream)
+              </p>
+              <p style={{ color: "var(--fg)", fontSize: 16, fontWeight: 600 }}>
+                {physicsSuggestion.freestream_k.toFixed(4)}
+              </p>
+              <span className="text-[11px]" style={{ color: "var(--fg-muted)" }}>m²/s²</span>
+            </div>
+
+            {/* Freestream omega */}
+            <div>
+              <p className="text-[11px] uppercase tracking-wide mb-1" style={{ color: "var(--fg-muted)", fontWeight: 600 }}>
+                omega (freestream)
+              </p>
+              <p style={{ color: "var(--fg)", fontSize: 16, fontWeight: 600 }}>
+                {physicsSuggestion.freestream_omega.toFixed(1)}
+              </p>
+              <span className="text-[11px]" style={{ color: "var(--fg-muted)" }}>1/s</span>
+            </div>
+          </div>
+
+          <p className="text-[11px] leading-relaxed" style={{ color: "var(--fg-muted)" }}>
+            {physicsSuggestion.turbulence_model_rationale}
+          </p>
+        </div>
       )}
 
       {/* Tab bar */}

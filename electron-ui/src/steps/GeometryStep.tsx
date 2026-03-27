@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
-import { LayoutGrid, Upload, Info } from "lucide-react";
-import { fetchTemplates, createCase, deleteCase, uploadGeometry } from "../api";
-import type { Template } from "../types";
+import { LayoutGrid, Upload, Info, Wind, Tag } from "lucide-react";
+import { fetchTemplates, createCase, deleteCase, uploadGeometry, classifyGeometry } from "../api";
+import type { Template, GeometryClassification } from "../types";
 import MeshPreview from "../components/MeshPreview";
 
 const UNIT_OPTIONS = [
@@ -12,6 +12,20 @@ const UNIT_OPTIONS = [
   { label: "Feet (ft)", value: "ft", scale: 0.3048, hint: "" },
 ] as const;
 
+const USE_CASES = [
+  { label: "External Aerodynamics", value: "external_aero", velocityHint: "10–80 m/s" },
+  { label: "Drone / UAV", value: "drone", velocityHint: "5–30 m/s" },
+  { label: "Automotive", value: "automotive", velocityHint: "20–60 m/s" },
+  { label: "Wind Engineering", value: "wind_eng", velocityHint: "5–40 m/s" },
+  { label: "Custom", value: "custom", velocityHint: "" },
+] as const;
+
+const GEO_CLASS_COLORS: Record<string, string> = {
+  streamlined: "var(--success)",
+  bluff: "var(--warning)",
+  complex: "var(--error)",
+};
+
 interface StepProps {
   caseName: string | null;
   setCaseName: (name: string) => void;
@@ -20,6 +34,10 @@ interface StepProps {
   goNext: () => void;
   goBack: () => void;
   completeStep: (step: number) => void;
+  velocity: number;
+  setVelocity: (v: number) => void;
+  geometryClass: string | null;
+  setGeometryClass: (c: string | null) => void;
 }
 
 type Mode = "choose" | "template" | "upload";
@@ -32,6 +50,10 @@ export default function GeometryStep({
   goNext,
   goBack,
   completeStep,
+  velocity,
+  setVelocity,
+  geometryClass,
+  setGeometryClass,
 }: StepProps) {
   const [mode, setMode] = useState<Mode>("choose");
   const [templates, setTemplates] = useState<Template[]>([]);
@@ -47,6 +69,9 @@ export default function GeometryStep({
     triangles: number;
     bounds: { min: number[]; max: number[] };
   } | null>(null);
+  const [useCase, setUseCase] = useState("external_aero");
+  const [classification, setClassification] = useState<GeometryClassification | null>(null);
+  const [classOverride, setClassOverride] = useState<string | null>(null);
 
   useEffect(() => {
     if (mode !== "template") return;
@@ -64,7 +89,6 @@ export default function GeometryStep({
         .catch((e) => {
           if (!cancelled) {
             setError(e.message);
-            // Retry every 3s so the error auto-clears when the backend recovers
             retryTimer = setTimeout(load, 3000);
           }
         });
@@ -77,6 +101,21 @@ export default function GeometryStep({
       if (retryTimer) clearTimeout(retryTimer);
     };
   }, [mode]);
+
+  // Auto-classify geometry when case is ready
+  useEffect(() => {
+    if (!caseName) return;
+    let cancelled = false;
+    classifyGeometry(caseName)
+      .then((c) => {
+        if (!cancelled) {
+          setClassification(c);
+          setGeometryClass(c.geometry_class);
+        }
+      })
+      .catch(() => {/* geometry may not be uploaded yet for templates */});
+    return () => { cancelled = true; };
+  }, [caseName, uploadInfo, setGeometryClass]);
 
   const handleSelectTemplate = useCallback(
     async (tmpl: Template) => {
@@ -134,6 +173,11 @@ export default function GeometryStep({
       setLoading(false);
     }
   }, [pendingFile, stlUnit, setCaseName]);
+
+  const handleClassOverride = (value: string) => {
+    setClassOverride(value);
+    setGeometryClass(value);
+  };
 
   const handleNext = () => {
     completeStep(0);
@@ -225,6 +269,122 @@ export default function GeometryStep({
     );
   }
 
+  // --- Velocity & classification panel (shared by template + upload modes) ---
+  const velocityPanel = (caseName || selectedTemplate) && (
+    <div className="mt-6 space-y-4 max-w-2xl">
+      {/* Use-case picker */}
+      <div
+        className="p-4"
+        style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
+      >
+        <div className="flex items-center gap-2 mb-3">
+          <Tag size={14} style={{ color: "var(--accent)" }} />
+          <span className="text-[13px] font-semibold" style={{ color: "var(--fg)" }}>Use Case</span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {USE_CASES.map((uc) => (
+            <button
+              key={uc.value}
+              onClick={() => setUseCase(uc.value)}
+              className="px-3 py-1.5 text-[12px] transition-all"
+              style={{
+                background: useCase === uc.value ? "var(--accent)" : "transparent",
+                color: useCase === uc.value ? "#09090B" : "var(--fg-muted)",
+                border: useCase === uc.value ? "1px solid var(--accent)" : "1px solid var(--border)",
+                fontWeight: useCase === uc.value ? 600 : 400,
+              }}
+            >
+              {uc.label}
+              {uc.velocityHint && (
+                <span className="ml-1 opacity-60">({uc.velocityHint})</span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Velocity input */}
+      <div
+        className="p-4"
+        style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
+      >
+        <div className="flex items-center gap-2 mb-3">
+          <Wind size={14} style={{ color: "var(--accent)" }} />
+          <span className="text-[13px] font-semibold" style={{ color: "var(--fg)" }}>Freestream Velocity</span>
+        </div>
+        <div className="flex items-center gap-3">
+          <input
+            type="number"
+            value={velocity}
+            onChange={(e) => setVelocity(Math.max(0, parseFloat(e.target.value) || 0))}
+            className="w-32 px-3 py-2 text-[13px]"
+            style={{
+              background: "#1a1a1e",
+              border: "1px solid var(--border)",
+              color: "#e4e4e7",
+              outline: "none",
+            }}
+            min={0}
+            step={1}
+          />
+          <span className="text-[13px]" style={{ color: "var(--fg-muted)" }}>m/s</span>
+          <span className="text-[11px] ml-2" style={{ color: "var(--fg-muted)" }}>
+            {velocity > 0 ? `${(velocity * 3.6).toFixed(0)} km/h` : ""}
+            {velocity > 0 ? ` / ${(velocity * 2.237).toFixed(0)} mph` : ""}
+          </span>
+        </div>
+      </div>
+
+      {/* Geometry classification */}
+      {classification && (
+        <div
+          className="p-4"
+          style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <div
+                className="w-2 h-2 rounded-full"
+                style={{ background: GEO_CLASS_COLORS[geometryClass ?? classification.geometry_class] ?? "var(--fg-muted)" }}
+              />
+              <span className="text-[13px] font-semibold" style={{ color: "var(--fg)" }}>
+                Geometry: {(geometryClass ?? classification.geometry_class).charAt(0).toUpperCase() + (geometryClass ?? classification.geometry_class).slice(1)}
+              </span>
+            </div>
+            <select
+              value={classOverride ?? classification.geometry_class}
+              onChange={(e) => handleClassOverride(e.target.value)}
+              className="text-[11px] px-2 py-1"
+              style={{
+                background: "#1a1a1e",
+                border: "1px solid var(--border)",
+                color: "var(--fg-muted)",
+                outline: "none",
+              }}
+            >
+              <option value="streamlined">Streamlined</option>
+              <option value="bluff">Bluff</option>
+              <option value="complex">Complex</option>
+            </select>
+          </div>
+          <p className="text-[12px] leading-relaxed" style={{ color: "var(--fg-muted)" }}>
+            {classification.description}
+          </p>
+          {classification.warning && (
+            <p className="text-[12px] mt-1" style={{ color: "var(--warning)" }}>
+              {classification.warning}
+            </p>
+          )}
+          <div className="flex gap-6 mt-2 text-[11px]" style={{ color: "var(--fg-muted)" }}>
+            <span>L = {classification.characteristic_length.toFixed(3)} m</span>
+            <span>A = {classification.frontal_area.toFixed(4)} m²</span>
+            <span>AR = {classification.aspect_ratio.toFixed(1)}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
   // --- Template mode ---
   if (mode === "template") {
     return (
@@ -273,6 +433,22 @@ export default function GeometryStep({
                 }
               }}
             >
+              {/* Template thumbnail placeholder */}
+              <div
+                className="mb-3 flex items-center justify-center text-[11px]"
+                style={{
+                  height: 80,
+                  background: "var(--bg-elevated)",
+                  border: "1px solid var(--border)",
+                  color: "var(--fg-muted)",
+                  overflow: "hidden",
+                }}
+              >
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                  <rect x="4" y="12" width="32" height="16" rx="2" stroke="var(--fg-muted)" strokeWidth="1" fill="none" opacity="0.4" />
+                  <path d="M8 20 L16 16 L24 22 L32 18" stroke="var(--accent)" strokeWidth="1.5" fill="none" opacity="0.6" />
+                </svg>
+              </div>
               <h3 className="font-semibold mb-1 text-[13px]" style={{ color: "var(--fg)" }}>{tmpl.name}</h3>
               <p className="text-[11px] leading-relaxed" style={{ color: "var(--fg-muted)" }}>
                 {tmpl.description}
@@ -305,6 +481,8 @@ export default function GeometryStep({
             Creating case from template...
           </p>
         )}
+
+        {velocityPanel}
 
         <div className="flex justify-between mt-6">
           <button
@@ -534,6 +712,8 @@ export default function GeometryStep({
           )}
         </div>
       )}
+
+      {velocityPanel}
 
       <div className="flex justify-between mt-6">
         <button

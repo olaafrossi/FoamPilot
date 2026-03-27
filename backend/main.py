@@ -7,7 +7,7 @@ import subprocess
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from routers import cases, files, geometry, pipeline, runner
+from routers import cases, files, geometry, pipeline, runner, suggestions
 
 app = FastAPI(title="FoamPilot", version="0.1.0")
 
@@ -28,6 +28,7 @@ app.include_router(runner.router)
 app.include_router(files.router)
 app.include_router(pipeline.router)
 app.include_router(geometry.router)
+app.include_router(suggestions.router)
 
 
 # ── Health check ─────────────────────────────────────────────────────

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { Lightbulb, Calculator } from "lucide-react";
 import FoamEditor from "../components/FoamEditor";
 import MeshPreview from "../components/MeshPreview";
 import LogViewer from "../components/LogViewer";
@@ -12,9 +13,11 @@ import {
   getMeshQuality,
   cancelJob,
   getConfig,
+  getSuggestions,
+  getYPlus,
 } from "../api";
 import { useStopwatch, formatElapsed } from "../hooks/useStopwatch";
-import type { MeshQuality } from "../types";
+import type { MeshQuality, MeshSuggestion, YPlusResult } from "../types";
 
 interface StepProps {
   caseName: string | null;
@@ -24,24 +27,16 @@ interface StepProps {
   goNext: () => void;
   goBack: () => void;
   completeStep: (step: number) => void;
+  velocity: number;
+  setVelocity: (v: number) => void;
+  geometryClass: string | null;
+  setGeometryClass: (c: string | null) => void;
 }
 
 const MESH_FILES = [
-  {
-    key: "blockMeshDict",
-    path: "system/blockMeshDict",
-    label: "blockMeshDict",
-  },
-  {
-    key: "snappyHexMeshDict",
-    path: "system/snappyHexMeshDict",
-    label: "snappyHexMeshDict",
-  },
-  {
-    key: "surfaceFeatureExtractDict",
-    path: "system/surfaceFeatureExtractDict",
-    label: "surfaceFeatureExtractDict",
-  },
+  { key: "blockMeshDict", path: "system/blockMeshDict", label: "blockMeshDict" },
+  { key: "snappyHexMeshDict", path: "system/snappyHexMeshDict", label: "snappyHexMeshDict" },
+  { key: "surfaceFeatureExtractDict", path: "system/surfaceFeatureExtractDict", label: "surfaceFeatureExtractDict" },
 ];
 
 export default function MeshStep({
@@ -49,6 +44,8 @@ export default function MeshStep({
   goNext,
   goBack,
   completeStep,
+  velocity,
+  geometryClass,
 }: StepProps) {
   const [activeTab, setActiveTab] = useState(0);
   const [fileContents, setFileContents] = useState<Record<string, string>>({});
@@ -63,6 +60,12 @@ export default function MeshStep({
   const wsRef = useRef<WebSocket | null>(null);
   const stopwatch = useStopwatch();
   const { setWorking, setElapsed } = useStatus();
+
+  // Suggestions state
+  const [meshSuggestion, setMeshSuggestion] = useState<MeshSuggestion | null>(null);
+  const [yPlusResult, setYPlusResult] = useState<YPlusResult | null>(null);
+  const [yPlusTarget, setYPlusTarget] = useState(30);
+  const [suggestionApplied, setSuggestionApplied] = useState(false);
 
   // Sync running state and elapsed time to global status bar
   useEffect(() => {
@@ -94,6 +97,23 @@ export default function MeshStep({
     });
   }, [caseName]);
 
+  // Fetch suggestions
+  useEffect(() => {
+    if (!caseName || velocity <= 0) return;
+    let cancelled = false;
+    getSuggestions(caseName, velocity, geometryClass ?? undefined)
+      .then((s) => {
+        if (!cancelled) setMeshSuggestion(s.mesh);
+      })
+      .catch(() => {});
+    getYPlus(caseName, velocity, yPlusTarget)
+      .then((y) => {
+        if (!cancelled) setYPlusResult(y);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [caseName, velocity, geometryClass, yPlusTarget]);
+
   const saveFile = useCallback(
     async (key: string) => {
       if (!caseName || !dirty[key]) return;
@@ -120,6 +140,47 @@ export default function MeshStep({
     setFileContents((prev) => ({ ...prev, [key]: value ?? "" }));
     setDirty((d) => ({ ...d, [key]: true }));
   };
+
+  const applySuggestions = useCallback(async () => {
+    if (!caseName || !meshSuggestion) return;
+    setError(null);
+    try {
+      // Update snappyHexMeshDict with suggested values
+      let snappy = fileContents["snappyHexMeshDict"] ?? "";
+
+      // Update surface refinement levels
+      snappy = snappy.replace(
+        /level\s*\(\s*\d+\s+\d+\s*\)/,
+        `level (${meshSuggestion.surface_refinement_min} ${meshSuggestion.surface_refinement_max})`,
+      );
+
+      // Update feature level
+      snappy = snappy.replace(
+        /level\s+\d+;\s*\n(\s*\})/,
+        `level ${meshSuggestion.feature_level};\n$1`,
+      );
+
+      // Update nSurfaceLayers
+      snappy = snappy.replace(
+        /nSurfaceLayers\s+\d+/,
+        `nSurfaceLayers ${meshSuggestion.n_surface_layers}`,
+      );
+
+      // Update expansionRatio
+      snappy = snappy.replace(
+        /expansionRatio\s+[\d.]+/,
+        `expansionRatio ${meshSuggestion.expansion_ratio}`,
+      );
+
+      setFileContents((prev) => ({ ...prev, snappyHexMeshDict: snappy }));
+      setDirty((d) => ({ ...d, snappyHexMeshDict: true }));
+      await writeFile(caseName, "system/snappyHexMeshDict", snappy);
+      setDirty((d) => ({ ...d, snappyHexMeshDict: false }));
+      setSuggestionApplied(true);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to apply suggestions");
+    }
+  }, [caseName, meshSuggestion, fileContents]);
 
   const generateMesh = async () => {
     if (!caseName) return;
@@ -176,6 +237,10 @@ export default function MeshStep({
 
             if (status.status === "completed") {
               setMeshDone(true);
+              // Send toast notification
+              if ("Notification" in window && Notification.permission === "granted") {
+                new Notification("FoamPilot", { body: "Mesh generation complete" });
+              }
               try {
                 const quality = await getMeshQuality(caseName);
                 setMeshQuality(quality);
@@ -234,6 +299,102 @@ export default function MeshStep({
 
       {error && (
         <div style={{ color: "var(--error)", fontSize: 13, marginBottom: 16 }}>{error}</div>
+      )}
+
+      {/* Suggestion banner */}
+      {meshSuggestion && !suggestionApplied && (
+        <div
+          className="p-4 mb-4 flex items-start gap-3"
+          style={{
+            background: "rgba(245, 158, 11, 0.06)",
+            border: "1px solid rgba(245, 158, 11, 0.3)",
+          }}
+        >
+          <Lightbulb size={16} className="shrink-0 mt-0.5" style={{ color: "var(--accent)" }} />
+          <div className="flex-1">
+            <p className="text-[13px] font-semibold mb-1" style={{ color: "var(--fg)" }}>
+              Mesh suggestions available
+            </p>
+            <p className="text-[12px] mb-2" style={{ color: "var(--fg-muted)" }}>
+              {meshSuggestion.rationale}
+            </p>
+            <div className="flex flex-wrap gap-x-6 gap-y-1 text-[11px] mb-3" style={{ color: "var(--fg-muted)" }}>
+              <span>Surface: L{meshSuggestion.surface_refinement_min}–{meshSuggestion.surface_refinement_max}</span>
+              <span>Layers: {meshSuggestion.n_surface_layers}</span>
+              <span>Expansion: {meshSuggestion.expansion_ratio}</span>
+              <span>~{(meshSuggestion.estimated_cells / 1e6).toFixed(1)}M cells</span>
+              {meshSuggestion.first_layer_height && (
+                <span>1st layer: {(meshSuggestion.first_layer_height * 1000).toFixed(3)} mm</span>
+              )}
+            </div>
+            <button
+              onClick={applySuggestions}
+              className="px-4 py-1.5 text-[12px] font-semibold transition-colors"
+              style={{
+                background: "var(--accent)",
+                color: "#09090B",
+                border: "none",
+              }}
+              onMouseEnter={(e) => (e.currentTarget.style.background = "var(--accent-hover)")}
+              onMouseLeave={(e) => (e.currentTarget.style.background = "var(--accent)")}
+            >
+              Apply Suggestions
+            </button>
+          </div>
+        </div>
+      )}
+
+      {suggestionApplied && (
+        <div
+          className="p-3 mb-4 text-[12px]"
+          style={{ background: "rgba(34, 197, 94, 0.08)", border: "1px solid rgba(34, 197, 94, 0.3)", color: "var(--success)" }}
+        >
+          Suggestions applied to snappyHexMeshDict.
+        </div>
+      )}
+
+      {/* y+ calculator widget */}
+      {yPlusResult && (
+        <div
+          className="p-4 mb-4"
+          style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
+        >
+          <div className="flex items-center gap-2 mb-2">
+            <Calculator size={14} style={{ color: "var(--accent)" }} />
+            <span className="text-[13px] font-semibold" style={{ color: "var(--fg)" }}>y+ Calculator</span>
+          </div>
+          <div className="flex items-center gap-3 mb-2">
+            <label className="text-[12px]" style={{ color: "var(--fg-muted)" }}>Target y+:</label>
+            <input
+              type="number"
+              value={yPlusTarget}
+              onChange={(e) => setYPlusTarget(Math.max(1, parseFloat(e.target.value) || 30))}
+              className="w-20 px-2 py-1 text-[12px]"
+              style={{
+                background: "#1a1a1e",
+                border: "1px solid var(--border)",
+                color: "#e4e4e7",
+                outline: "none",
+              }}
+              min={1}
+              step={1}
+            />
+          </div>
+          {yPlusResult.message ? (
+            <p className="text-[12px]" style={{ color: "var(--warning)" }}>{yPlusResult.message}</p>
+          ) : (
+            <div className="flex flex-wrap gap-x-6 gap-y-1 text-[12px]" style={{ color: "var(--fg-muted)" }}>
+              <span>
+                1st cell height: <span style={{ color: "var(--fg)", fontWeight: 600 }}>
+                  {yPlusResult.first_cell_height !== null ? `${(yPlusResult.first_cell_height * 1000).toFixed(4)} mm` : "—"}
+                </span>
+              </span>
+              <span>Re = {yPlusResult.re.toExponential(2)}</span>
+              <span>Cf = {yPlusResult.cf.toExponential(3)}</span>
+              <span>u* = {yPlusResult.u_tau.toFixed(3)} m/s</span>
+            </div>
+          )}
+        </div>
       )}
 
       {/* Tab bar */}
