@@ -24,6 +24,18 @@ export interface StreamlineOptions {
   bothDirections?: boolean;
 }
 
+/** Options for seed point generation. */
+export interface SeedOptions {
+  /** Number of seed points to generate. */
+  count: number;
+  /** Seeding mode: 'uniform' for area-weighted, 'velocity' for velocity-magnitude-weighted. */
+  mode?: 'uniform' | 'velocity';
+  /** Optional subset of face indices to seed from. If omitted, all faces are used. */
+  faceSubset?: number[];
+  /** Velocity vectors per vertex — required for 'velocity' mode. */
+  vectors?: number[][];
+}
+
 // ---------------------------------------------------------------------------
 // Internal types
 // ---------------------------------------------------------------------------
@@ -432,41 +444,67 @@ export function traceStreamlines(
 }
 
 /**
- * Generate evenly-spaced seed points on the mesh surface using
- * area-weighted random sampling with deterministic seeding.
+ * Generate seed points on the mesh surface with configurable placement.
+ *
+ * Supports two modes:
+ * - `'uniform'` (default): Area-weighted random sampling. Larger triangles
+ *   get proportionally more seeds.
+ * - `'velocity'`: Weighted by (area * velocity magnitude). Seeds concentrate
+ *   in high-flow regions where streamlines are most informative.
+ *
+ * Use `faceSubset` to restrict seeding to specific boundary patches (e.g.
+ * only visible patches, or only inlet faces).
  *
  * @param vertices - Mesh vertex positions `[[x,y,z], ...]`
  * @param faces    - Triangle index triples `[[i,j,k], ...]`
- * @param count    - Desired number of seed points
+ * @param options  - Seed generation options (count, mode, faceSubset, vectors)
  * @returns Array of `[x,y,z]` points on the surface.
  */
 export function generateSeedPoints(
   vertices: number[][],
   faces: number[][],
-  count: number,
+  options: SeedOptions,
 ): number[][] {
+  const { count, mode = 'uniform', faceSubset, vectors } = options;
+
   if (faces.length === 0 || vertices.length === 0 || count <= 0) return [];
 
-  // Compute cumulative area distribution
-  const areas = new Float64Array(faces.length);
-  let totalArea = 0;
-  for (let i = 0; i < faces.length; i++) {
-    const f = faces[i];
-    areas[i] = triangleArea(vertices[f[0]], vertices[f[1]], vertices[f[2]]);
-    totalArea += areas[i];
+  // Determine which faces to seed from
+  const faceIndices = faceSubset ?? faces.map((_, i) => i);
+  if (faceIndices.length === 0) return [];
+
+  // Compute weights for each face
+  const weights = new Float64Array(faceIndices.length);
+  let totalWeight = 0;
+
+  for (let i = 0; i < faceIndices.length; i++) {
+    const fi = faceIndices[i];
+    const f = faces[fi];
+    const area = triangleArea(vertices[f[0]], vertices[f[1]], vertices[f[2]]);
+
+    if (mode === 'velocity' && vectors) {
+      // Weight by area * average velocity magnitude across the face
+      const m0 = vec3Length(vectors[f[0]]);
+      const m1 = vec3Length(vectors[f[1]]);
+      const m2 = vec3Length(vectors[f[2]]);
+      weights[i] = area * ((m0 + m1 + m2) / 3);
+    } else {
+      weights[i] = area;
+    }
+    totalWeight += weights[i];
   }
 
-  if (totalArea < 1e-30) return [];
+  if (totalWeight < 1e-30) return [];
 
   // Build CDF
-  const cdf = new Float64Array(faces.length);
-  cdf[0] = areas[0] / totalArea;
-  for (let i = 1; i < faces.length; i++) {
-    cdf[i] = cdf[i - 1] + areas[i] / totalArea;
+  const cdf = new Float64Array(faceIndices.length);
+  cdf[0] = weights[0] / totalWeight;
+  for (let i = 1; i < faceIndices.length; i++) {
+    cdf[i] = cdf[i - 1] + weights[i] / totalWeight;
   }
 
   // Deterministic pseudo-random using a simple LCG seeded from face count
-  let rngState = (faces.length * 2654435761) >>> 0;
+  let rngState = (faceIndices.length * 2654435761) >>> 0;
   function nextRandom(): number {
     rngState = (rngState * 1664525 + 1013904223) >>> 0;
     return rngState / 4294967296;
@@ -475,15 +513,15 @@ export function generateSeedPoints(
   const seeds: number[][] = [];
 
   for (let s = 0; s < count; s++) {
-    // Pick a face weighted by area
+    // Pick a face weighted by CDF
     const r = nextRandom();
-    let fi = 0;
+    let idx = 0;
     for (let i = 0; i < cdf.length; i++) {
       if (r <= cdf[i]) {
-        fi = i;
+        idx = i;
         break;
       }
-      fi = i;
+      idx = i;
     }
 
     // Random barycentric point on the face
@@ -495,7 +533,7 @@ export function generateSeedPoints(
     }
     const r3 = 1 - r1 - r2;
 
-    const f = faces[fi];
+    const f = faces[faceIndices[idx]];
     const v0 = vertices[f[0]];
     const v1 = vertices[f[1]];
     const v2 = vertices[f[2]];

@@ -4,6 +4,7 @@ import FieldMeshRenderer, { getDefaultVisiblePatches } from "./FieldMeshRenderer
 import { getFieldData } from "../api";
 import { getAvailableColorMaps, generateColorLUT } from "../lib/colormap";
 import { generateSeedPoints } from "../lib/streamlines";
+import type { SeedOptions } from "../lib/streamlines";
 import type { ColorMapName } from "../lib/colormap";
 import type { FieldData } from "../types";
 
@@ -78,6 +79,9 @@ export default function VisualizationPanel({ caseName }: VisualizationPanelProps
   const [opacity, setOpacity] = useState(1);
   const [showWireframe, setShowWireframe] = useState(false);
   const [showStreamlines, setShowStreamlines] = useState(false);
+  const [seedCount, setSeedCount] = useState(20);
+  const [seedMode, setSeedMode] = useState<'uniform' | 'velocity'>('uniform');
+  const [seedVisibleOnly, setSeedVisibleOnly] = useState(true);
   const [showPatchPanel, setShowPatchPanel] = useState(false);
 
   // Available options from the backend response
@@ -105,12 +109,6 @@ export default function VisualizationPanel({ caseName }: VisualizationPanelProps
         setPatchVisibility(getDefaultVisiblePatches(data.patches));
         patchVisibilityInitialized.current = true;
       }
-
-      // Generate streamline seeds from the mesh
-      if (data.vertices.length > 0 && data.faces.length > 0) {
-        const seedPts = generateSeedPoints(data.vertices, data.faces, 20);
-        setSeeds(seedPts);
-      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to load field data";
       setError(msg);
@@ -119,6 +117,40 @@ export default function VisualizationPanel({ caseName }: VisualizationPanelProps
       setLoading(false);
     }
   }, [caseName]);
+
+  // Generate streamline seeds when field data or seed controls change
+  useEffect(() => {
+    if (!fieldData || fieldData.vertices.length === 0 || fieldData.faces.length === 0) {
+      setSeeds([]);
+      return;
+    }
+
+    // Compute face subset from visible patches
+    let faceSubset: number[] | undefined;
+    if (seedVisibleOnly && fieldData.patches?.length > 0) {
+      const indices: number[] = [];
+      for (const patch of fieldData.patches) {
+        if (patchVisibility[patch.name]) {
+          for (let i = 0; i < patch.nFaces; i++) {
+            indices.push(patch.startFace + i);
+          }
+        }
+      }
+      // Only filter if we got some faces; otherwise fall back to all
+      if (indices.length > 0) {
+        faceSubset = indices;
+      }
+    }
+
+    const opts: SeedOptions = {
+      count: seedCount,
+      mode: seedMode,
+      faceSubset,
+      vectors: seedMode === 'velocity' ? fieldData.vectors : undefined,
+    };
+    const seedPts = generateSeedPoints(fieldData.vertices, fieldData.faces, opts);
+    setSeeds(seedPts);
+  }, [fieldData, seedCount, seedMode, seedVisibleOnly, patchVisibility]);
 
   // Load initial field data
   useEffect(() => {
@@ -282,6 +314,62 @@ export default function VisualizationPanel({ caseName }: VisualizationPanelProps
           </button>
         )}
       </div>
+
+      {/* Streamline controls — visible when streamlines are on */}
+      {showStreamlines && fieldData?.vectors && (
+        <div
+          className="flex flex-wrap items-center gap-4 mb-3 p-3"
+          style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
+        >
+          {/* Seed count */}
+          <div className="flex items-center gap-2">
+            <label style={{ fontSize: 11, color: "var(--fg-muted)", fontWeight: 600, textTransform: "uppercase" }}>
+              Seeds
+            </label>
+            <input
+              type="range"
+              min={5}
+              max={100}
+              step={5}
+              value={seedCount}
+              onChange={(e) => setSeedCount(Number(e.target.value))}
+              style={{ width: 80, accentColor: "var(--accent)" }}
+            />
+            <span style={{ fontSize: 11, color: "var(--fg-muted)", minWidth: 24 }}>
+              {seedCount}
+            </span>
+          </div>
+
+          {/* Seeding mode */}
+          <div className="flex items-center gap-2">
+            <label style={{ fontSize: 11, color: "var(--fg-muted)", fontWeight: 600, textTransform: "uppercase" }}>
+              Mode
+            </label>
+            <select
+              value={seedMode}
+              onChange={(e) => setSeedMode(e.target.value as 'uniform' | 'velocity')}
+              className="bg-[var(--bg-input)] text-[var(--fg)] border border-[var(--border)] px-2 py-1 text-[13px]"
+              style={{ borderRadius: 2 }}
+            >
+              <option value="uniform">Uniform</option>
+              <option value="velocity">Velocity-weighted</option>
+            </select>
+          </div>
+
+          {/* Visible patches only */}
+          <label className="flex items-center gap-1.5 cursor-pointer" style={{ fontSize: 12 }}>
+            <input
+              type="checkbox"
+              checked={seedVisibleOnly}
+              onChange={(e) => setSeedVisibleOnly(e.target.checked)}
+              style={{ accentColor: "var(--accent)" }}
+            />
+            <span style={{ color: "var(--fg-muted)" }}>
+              Visible patches only
+            </span>
+          </label>
+        </div>
+      )}
 
       {/* Patch visibility panel */}
       {showPatchPanel && fieldData?.patches && (
