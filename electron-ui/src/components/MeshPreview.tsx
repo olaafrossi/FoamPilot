@@ -119,7 +119,8 @@ function CameraReset({ resetTrigger }: { resetTrigger: number }) {
   const { camera } = useThree();
   useEffect(() => {
     if (resetTrigger > 0) {
-      camera.position.set(5, 3, 5);
+      camera.up.set(0, 0, 1);
+      camera.position.set(6, -4, 3);
       camera.lookAt(0, 0, 0);
     }
   }, [resetTrigger, camera]);
@@ -199,8 +200,11 @@ export default function MeshPreview({ caseName }: MeshPreviewProps) {
   }
 
   return (
-    <div style={{ position: "relative", height: 300, background: "#1a1a2e", border: "1px solid var(--border)" }}>
-      <Canvas camera={{ position: [5, 3, 5], fov: 50 }}>
+    <div style={{ position: "relative", height: 300, background: "#1a1a2e", border: "1px solid #474747" }}>
+      <Canvas
+        camera={{ position: [6, -4, 3], fov: 50, up: [0, 0, 1] }}
+        onCreated={({ camera }) => { camera.up.set(0, 0, 1); camera.lookAt(0, 0, 0); }}
+      >
         <CameraReset resetTrigger={resetCount} />
         <ambientLight intensity={0.4} />
         <directionalLight position={[10, 10, 5]} intensity={0.8} />
@@ -210,7 +214,7 @@ export default function MeshPreview({ caseName }: MeshPreviewProps) {
         ) : (
           <STLModel url={fileUrl} />
         )}
-        <gridHelper args={[10, 10, "#333333", "#222222"]} />
+        <gridHelper args={[10, 10, "#333333", "#222222"]} rotation={[-Math.PI / 2, 0, 0]} />
         <OrbitControls
           enableDamping
           dampingFactor={0.1}
