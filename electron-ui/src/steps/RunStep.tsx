@@ -9,7 +9,9 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
+import LogViewer from "../components/LogViewer";
 import { runCommands, connectLogs, getJobStatus, cancelJob, getConfig } from "../api";
+import { useStopwatch, formatElapsed } from "../hooks/useStopwatch";
 
 interface StepProps {
   caseName: string | null;
@@ -71,19 +73,14 @@ export default function RunStep({
   const [finished, setFinished] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
-  const logEndRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
+  const stopwatch = useStopwatch();
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Buffer for log lines to avoid overwhelming React
   const lineBufferRef = useRef<string[]>([]);
   const residualBufferRef = useRef<ResidualPoint>({ iteration: 0 });
   const iterationRef = useRef(0);
-
-  // Auto-scroll log
-  useEffect(() => {
-    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [logLines]);
 
   // Flush buffer every 200ms
   useEffect(() => {
@@ -116,6 +113,7 @@ export default function RunStep({
     setFinished(false);
     lineBufferRef.current = [];
     iterationRef.current = 0;
+    stopwatch.start();
 
     const cores = getConfig().cores;
 
@@ -171,6 +169,7 @@ export default function RunStep({
             pollRef.current = null;
             setRunning(false);
             setCurrentJobId(null);
+            stopwatch.stop();
             ws.close();
             wsRef.current = null;
 
@@ -199,6 +198,7 @@ export default function RunStep({
       }, 2000);
     } catch (e: unknown) {
       setRunning(false);
+      stopwatch.stop();
       setError(
         e instanceof Error ? e.message : "Failed to start solver",
       );
@@ -215,6 +215,7 @@ export default function RunStep({
     pollRef.current = null;
     setRunning(false);
     setCurrentJobId(null);
+    stopwatch.stop();
     setError("Solver run cancelled.");
     if (lineBufferRef.current.length > 0) {
       setLogLines((prev) => [...prev, ...lineBufferRef.current]);
@@ -266,14 +267,18 @@ export default function RunStep({
             >
               Stop
             </button>
-            <span className="text-[#858585] text-[13px]">
+            <span className="text-[#858585] text-[13px] flex items-center gap-1.5">
+              <span className="inline-block w-2 h-2 rounded-full bg-[#89d185] animate-pulse" />
               Running... iteration {currentIteration}
+            </span>
+            <span className="text-[#858585] text-[13px] font-mono tabular-nums">
+              {formatElapsed(stopwatch.elapsed)}
             </span>
           </>
         )}
         {finished && (
           <span className="text-[#89d185] text-[13px] font-semibold">
-            Solver completed at iteration {currentIteration}
+            Solver completed at iteration {currentIteration} in {formatElapsed(stopwatch.elapsed)}
           </span>
         )}
       </div>
@@ -336,15 +341,7 @@ export default function RunStep({
 
       {/* Log output */}
       {logLines.length > 0 && (
-        <div
-          className="border border-[#474747] p-3 h-64 overflow-y-auto font-mono text-[13px] text-[#cccccc]"
-          style={{ background: "var(--bg-editor)", borderRadius: 0 }}
-        >
-          {logLines.map((line, i) => (
-            <div key={i}>{line}</div>
-          ))}
-          <div ref={logEndRef} />
-        </div>
+        <LogViewer lines={logLines} />
       )}
 
       {/* Navigation */}
