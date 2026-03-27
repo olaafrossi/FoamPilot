@@ -3,3 +3,4 @@ uvicorn[standard]>=0.34,<1
 websockets>=14,<15
 pydantic>=2,<3
 python-multipart>=0.0.9
+numpy>=1.24,<3
