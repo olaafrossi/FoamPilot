@@ -62,13 +62,17 @@ export default function MeshStep({
   const [meshDone, setMeshDone] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const stopwatch = useStopwatch();
-  const { setWorking } = useStatus();
+  const { setWorking, setElapsed } = useStatus();
 
-  // Sync running state to global status bar
+  // Sync running state and elapsed time to global status bar
   useEffect(() => {
     setWorking(running);
     return () => setWorking(false);
   }, [running, setWorking]);
+
+  useEffect(() => {
+    setElapsed(stopwatch.elapsed);
+  }, [stopwatch.elapsed, setElapsed]);
 
   // Load all files on mount
   useEffect(() => {
@@ -307,14 +311,6 @@ export default function MeshStep({
           >
             Stop
           </button>
-        )}
-        {(running || stopwatch.elapsed > 0) && (
-          <span className="text-[#858585] text-[13px] font-mono tabular-nums flex items-center gap-1.5">
-            {running && (
-              <span className="inline-block w-2 h-2 rounded-full bg-[#89d185] animate-pulse" />
-            )}
-            {formatElapsed(stopwatch.elapsed)}
-          </span>
         )}
       </div>
 
