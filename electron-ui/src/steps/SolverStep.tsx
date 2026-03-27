@@ -159,19 +159,8 @@ export default function SolverStep({
       ) : (
         <FoamEditor
           height="400px"
-          defaultLanguage="plaintext"
-          theme="vs-dark"
           value={fileContents[currentFile.key] ?? ""}
           onChange={handleEditorChange}
-          options={{
-            minimap: { enabled: false },
-            fontSize: 13,
-            fontFamily: "Cascadia Code, Consolas, monospace",
-            lineNumbers: "on",
-            scrollBeyondLastLine: false,
-            wordWrap: "off",
-            automaticLayout: true,
-          }}
         />
       )}
 
