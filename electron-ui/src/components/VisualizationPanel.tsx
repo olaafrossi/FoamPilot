@@ -13,24 +13,32 @@ interface VisualizationPanelProps {
 
 const COLORMAPS = getAvailableColorMaps();
 
-/** Renders a vertical gradient bar from the given color LUT. */
+/** Renders a vertical gradient bar with editable upper/lower bound inputs. */
 function ColorLegend({
-  min,
-  max,
+  dataMin,
+  dataMax,
+  rangeMin,
+  rangeMax,
+  onRangeChange,
   field,
   palette,
 }: {
-  min: number;
-  max: number;
+  dataMin: number;
+  dataMax: number;
+  rangeMin: number;
+  rangeMax: number;
+  onRangeChange: (min: number, max: number) => void;
   field: string;
   palette: ColorMapName;
 }) {
   const lut = generateColorLUT(palette, 64);
 
-  // Build a CSS linear-gradient from top (max) to bottom (min)
-  const stops = lut
+  // Build a CSS linear-gradient from top (max/red) to bottom (min/blue).
+  // Reverse the LUT so stops go in ascending CSS percentage order (0% → 100%).
+  const reversedLut = [...lut].reverse();
+  const stops = reversedLut
     .map((c, i) => {
-      const pct = (1 - i / (lut.length - 1)) * 100;
+      const pct = (i / (reversedLut.length - 1)) * 100;
       return `rgb(${Math.round(c[0] * 255)},${Math.round(c[1] * 255)},${Math.round(c[2] * 255)}) ${pct.toFixed(1)}%`;
     })
     .join(", ");
@@ -46,8 +54,34 @@ function ColorLegend({
 
   const unit = fieldUnits[field] ?? "";
 
+  const isCustomRange = rangeMin !== dataMin || rangeMax !== dataMax;
+
+  const inputStyle: React.CSSProperties = {
+    width: 72,
+    fontSize: 11,
+    padding: "1px 4px",
+    background: "var(--bg-input)",
+    color: "var(--fg)",
+    border: "1px solid var(--border)",
+    borderRadius: 2,
+    textAlign: "right" as const,
+  };
+
+  // Compute intermediate tick values (25%, 50%, 75%)
+  const midVal = (rangeMin + rangeMax) / 2;
+  const q1Val = (rangeMin + midVal) / 2;
+  const q3Val = (midVal + rangeMax) / 2;
+
+  const formatVal = (v: number) => {
+    if (Math.abs(v) >= 1000 || (Math.abs(v) < 0.01 && v !== 0)) {
+      return v.toExponential(2);
+    }
+    return v.toPrecision(4);
+  };
+
   return (
     <div className="flex gap-2" style={{ height: 200 }}>
+      {/* Gradient bar */}
       <div
         style={{
           width: 16,
@@ -55,12 +89,98 @@ function ColorLegend({
           background: `linear-gradient(to bottom, ${stops})`,
           border: "1px solid var(--border)",
           borderRadius: 1,
+          flexShrink: 0,
         }}
       />
-      <div className="flex flex-col justify-between" style={{ fontSize: 11, color: "var(--fg)" }}>
-        <span>{max.toPrecision(4)} {unit}</span>
-        <span style={{ color: "var(--fg-muted)" }}>{field}</span>
-        <span>{min.toPrecision(4)} {unit}</span>
+
+      {/* Labels column: inputs at top/bottom, ticks in between */}
+      <div
+        style={{
+          position: "relative",
+          height: "100%",
+          minWidth: 90,
+          fontSize: 11,
+          color: "var(--fg)",
+        }}
+      >
+        {/* Upper bound input — top */}
+        <div style={{ position: "absolute", top: -2 }}>
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              value={rangeMax}
+              step="any"
+              style={inputStyle}
+              onChange={(e) => {
+                const v = parseFloat(e.target.value);
+                if (Number.isFinite(v)) onRangeChange(rangeMin, v);
+              }}
+              title="Upper bound"
+            />
+            <span style={{ color: "var(--fg-muted)", fontSize: 10 }}>{unit}</span>
+          </div>
+        </div>
+
+        {/* 75% tick */}
+        <span
+          style={{ position: "absolute", top: "25%", transform: "translateY(-50%)", color: "var(--fg-muted)", fontSize: 10 }}
+        >
+          {formatVal(q3Val)}
+        </span>
+
+        {/* 50% tick + field label */}
+        <div
+          style={{ position: "absolute", top: "50%", transform: "translateY(-50%)" }}
+        >
+          <span style={{ color: "var(--fg-muted)", fontSize: 10 }}>
+            {formatVal(midVal)}
+          </span>
+          <div className="flex items-center gap-1" style={{ marginTop: 2 }}>
+            <span style={{ color: "var(--fg-muted)", fontWeight: 600 }}>{field}</span>
+            {isCustomRange && (
+              <button
+                onClick={() => onRangeChange(dataMin, dataMax)}
+                title="Reset to data range"
+                style={{
+                  fontSize: 10,
+                  color: "var(--accent)",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: 0,
+                  textDecoration: "underline",
+                }}
+              >
+                reset
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* 25% tick */}
+        <span
+          style={{ position: "absolute", top: "75%", transform: "translateY(-50%)", color: "var(--fg-muted)", fontSize: 10 }}
+        >
+          {formatVal(q1Val)}
+        </span>
+
+        {/* Lower bound input — bottom */}
+        <div style={{ position: "absolute", bottom: -2 }}>
+          <div className="flex items-center gap-1">
+            <input
+              type="number"
+              value={rangeMin}
+              step="any"
+              style={inputStyle}
+              onChange={(e) => {
+                const v = parseFloat(e.target.value);
+                if (Number.isFinite(v)) onRangeChange(v, rangeMax);
+              }}
+              title="Lower bound"
+            />
+            <span style={{ color: "var(--fg-muted)", fontSize: 10 }}>{unit}</span>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -84,6 +204,10 @@ export default function VisualizationPanel({ caseName }: VisualizationPanelProps
   const [availableFields, setAvailableFields] = useState<string[]>([]);
   const [availableTimes, setAvailableTimes] = useState<string[]>([]);
 
+  // Color range bounds (user-adjustable)
+  const [rangeMin, setRangeMin] = useState<number>(0);
+  const [rangeMax, setRangeMax] = useState<number>(1);
+
   // Seed points for streamlines (generated from mesh)
   const [seeds, setSeeds] = useState<number[][]>([]);
 
@@ -97,6 +221,8 @@ export default function VisualizationPanel({ caseName }: VisualizationPanelProps
     try {
       const data = await getFieldData(caseName, field, time);
       setFieldData(data);
+      setRangeMin(data.min);
+      setRangeMax(data.max);
       setAvailableFields(data.available_fields ?? []);
       setAvailableTimes(data.available_times ?? []);
 
@@ -339,6 +465,8 @@ export default function VisualizationPanel({ caseName }: VisualizationPanelProps
               showStreamlines={showStreamlines}
               streamlineSeeds={seeds}
               patchVisibility={patchVisibility}
+              rangeMin={rangeMin}
+              rangeMax={rangeMax}
             />
           )}
         </div>
@@ -347,8 +475,11 @@ export default function VisualizationPanel({ caseName }: VisualizationPanelProps
         {fieldData && !loading && !error && (
           <div className="flex-shrink-0 pt-2">
             <ColorLegend
-              min={fieldData.min}
-              max={fieldData.max}
+              dataMin={fieldData.min}
+              dataMax={fieldData.max}
+              rangeMin={rangeMin}
+              rangeMax={rangeMax}
+              onRangeChange={(min, max) => { setRangeMin(min); setRangeMax(max); }}
               field={fieldData.field}
               palette={colormap}
             />
