@@ -51,14 +51,17 @@ def _strip_comments(text: str) -> str:
 def parse_points(case_dir: str | Path) -> np.ndarray:
     """Parse constant/polyMesh/points and return an (N, 3) float64 array.
 
-    Supports ASCII format only (binary polyMesh rarely used in practice).
+    Supports both ASCII and binary formats.  Binary layout (after the count
+    and opening ``(``): N * 3 little-endian float64 values.
     """
     path = Path(case_dir) / "constant" / "polyMesh" / "points"
     if not path.is_file():
         raise FileNotFoundError(f"Points file not found: {path}")
 
-    raw = path.read_text(encoding="utf-8", errors="replace")
-    clean = _strip_comments(raw)
+    raw_bytes = path.read_bytes()
+    text = raw_bytes.decode("utf-8", errors="replace")
+    header = _parse_foam_header(text)
+    clean = _strip_comments(text)
 
     # Find the header to skip it
     header_end = 0
@@ -69,19 +72,39 @@ def parse_points(case_dir: str | Path) -> np.ndarray:
     body = clean[header_end:]
 
     # Find count then the parenthesised block
-    # Pattern: <int>\n(\n ... \n)
     count_match = re.search(r"(\d+)\s*\(", body)
     if not count_match:
         raise ValueError("Cannot find point count in points file")
 
     n_points = int(count_match.group(1))
-    block_start = body.index("(", count_match.start()) + 1
 
-    # Find the matching closing paren
+    if _is_binary(header):
+        # Binary: find the '(' in raw bytes, then read N*3 doubles
+        # Use the text position of '(' to locate it in raw bytes
+        text_paren_pos = body.index("(", count_match.start())
+        # Map back to position in full text
+        full_text_pos = header_end + text_paren_pos
+        # Find the matching byte position (scan forward from approximate spot)
+        byte_start = raw_bytes.index(b"(", max(0, full_text_pos - 50)) + 1
+        # Skip whitespace/newline
+        while byte_start < len(raw_bytes) and raw_bytes[byte_start] in (
+            ord("\n"), ord("\r"), ord(" "),
+        ):
+            byte_start += 1
+
+        n_doubles = n_points * 3
+        expected_bytes = n_doubles * 8
+        data = struct.unpack(
+            f"<{n_doubles}d",
+            raw_bytes[byte_start : byte_start + expected_bytes],
+        )
+        return np.array(data, dtype=np.float64).reshape(n_points, 3)
+
+    # ASCII: parse each (x y z) tuple
+    block_start = body.index("(", count_match.start()) + 1
     block_end = body.rindex(")")
     block = body[block_start:block_end]
 
-    # Parse each (x y z) tuple
     coords = re.findall(r"\(\s*([^\)]+)\)", block)
     if len(coords) < n_points:
         raise ValueError(
@@ -105,13 +128,20 @@ def parse_faces(case_dir: str | Path) -> list[list[int]]:
     """Parse constant/polyMesh/faces and return a list of face vertex-index lists.
 
     Each face is represented as [v0, v1, v2, ...].
+
+    Supports both ASCII format and binary ``faceCompactList`` format.
+    Binary compact list layout (``label=32``):
+      - (N+1) int32 offsets
+      - followed by a flat int32 array of all vertex indices
     """
     path = Path(case_dir) / "constant" / "polyMesh" / "faces"
     if not path.is_file():
         raise FileNotFoundError(f"Faces file not found: {path}")
 
-    raw = path.read_text(encoding="utf-8", errors="replace")
-    clean = _strip_comments(raw)
+    raw_bytes = path.read_bytes()
+    text = raw_bytes.decode("utf-8", errors="replace")
+    header = _parse_foam_header(text)
+    clean = _strip_comments(text)
 
     header_end = 0
     hm = _HEADER_RE.search(clean)
@@ -120,6 +150,109 @@ def parse_faces(case_dir: str | Path) -> list[list[int]]:
 
     body = clean[header_end:]
 
+    # Determine label size from arch header (default 32-bit)
+    arch = header.get("arch", "")
+    label_size = 64 if "label=64" in arch else 32
+    label_fmt = "<q" if label_size == 64 else "<i"
+    label_bytes = 8 if label_size == 64 else 4
+
+    if _is_binary(header) and "compact" in header.get("class", "").lower():
+        # Binary faceCompactList format:
+        #   First block: (N+1) offsets as int32/int64
+        #   Second block: flat vertex indices as int32/int64
+        #
+        # The file has two count+( sections:
+        #   <nFaces+1>\n(\n<binary offsets>\n)\n\n<nLabels>\n(\n<binary labels>\n)
+
+        # Find the first count (nFaces is in the text before first '(')
+        count_match = re.search(r"(\d+)\s*\(", body)
+        if not count_match:
+            raise ValueError("Cannot find face count in faces file")
+
+        n_entries = int(count_match.group(1))  # This is N+1 for offsets
+
+        # Find the '(' for offsets block in raw bytes
+        text_paren_pos = body.index("(", count_match.start())
+        full_text_pos = header_end + text_paren_pos
+        byte_start = raw_bytes.index(b"(", max(0, full_text_pos - 50)) + 1
+        while byte_start < len(raw_bytes) and raw_bytes[byte_start] in (
+            ord("\n"), ord("\r"), ord(" "),
+        ):
+            byte_start += 1
+
+        # Read offsets
+        offsets_bytes = n_entries * label_bytes
+        offsets = struct.unpack(
+            f"<{n_entries}{label_fmt[-1]}",
+            raw_bytes[byte_start : byte_start + offsets_bytes],
+        )
+        n_faces = n_entries - 1  # offsets has N+1 entries
+
+        # Skip past the offsets block and closing ')'
+        after_offsets = byte_start + offsets_bytes
+        # Find the ')' closing the offsets block
+        close_paren = raw_bytes.index(b")", after_offsets)
+        # Find the next count + '(' for the labels block
+        rest_text = raw_bytes[close_paren:].decode("utf-8", errors="replace")
+        labels_count_match = re.search(r"(\d+)\s*\(", rest_text)
+        if not labels_count_match:
+            raise ValueError("Cannot find labels block in binary faceCompactList")
+
+        n_labels = int(labels_count_match.group(1))
+        labels_paren_pos = close_paren + rest_text.index("(", labels_count_match.start()) + 1
+        # Skip whitespace
+        while labels_paren_pos < len(raw_bytes) and raw_bytes[labels_paren_pos] in (
+            ord("\n"), ord("\r"), ord(" "),
+        ):
+            labels_paren_pos += 1
+
+        # Read all vertex labels
+        labels_data_bytes = n_labels * label_bytes
+        labels = struct.unpack(
+            f"<{n_labels}{label_fmt[-1]}",
+            raw_bytes[labels_paren_pos : labels_paren_pos + labels_data_bytes],
+        )
+
+        # Build face lists from offsets + labels
+        faces: list[list[int]] = []
+        for i in range(n_faces):
+            start = offsets[i]
+            end = offsets[i + 1]
+            faces.append(list(labels[start:end]))
+
+        return faces
+
+    elif _is_binary(header):
+        # Binary non-compact faceList: each face stored as
+        # int32 nVerts followed by nVerts int32 vertex indices
+        count_match = re.search(r"(\d+)\s*\(", body)
+        if not count_match:
+            raise ValueError("Cannot find face count in faces file")
+
+        n_faces = int(count_match.group(1))
+        text_paren_pos = body.index("(", count_match.start())
+        full_text_pos = header_end + text_paren_pos
+        byte_start = raw_bytes.index(b"(", max(0, full_text_pos - 50)) + 1
+        while byte_start < len(raw_bytes) and raw_bytes[byte_start] in (
+            ord("\n"), ord("\r"), ord(" "),
+        ):
+            byte_start += 1
+
+        faces = []
+        pos = byte_start
+        for _ in range(n_faces):
+            n_verts = struct.unpack(label_fmt, raw_bytes[pos : pos + label_bytes])[0]
+            pos += label_bytes
+            verts = struct.unpack(
+                f"<{n_verts}{label_fmt[-1]}",
+                raw_bytes[pos : pos + n_verts * label_bytes],
+            )
+            pos += n_verts * label_bytes
+            faces.append(list(verts))
+
+        return faces
+
+    # ASCII format
     count_match = re.search(r"(\d+)\s*\(", body)
     if not count_match:
         raise ValueError("Cannot find face count in faces file")
@@ -129,11 +262,10 @@ def parse_faces(case_dir: str | Path) -> list[list[int]]:
     block_end = body.rindex(")")
     block = body[block_start:block_end]
 
-    # Each face: N(v0 v1 v2 ...) — the N prefix may or may not have a space
     face_pattern = re.compile(r"(\d+)\s*\(([^)]+)\)")
     matches = face_pattern.findall(block)
 
-    faces: list[list[int]] = []
+    faces = []
     for _n_verts, verts_str in matches[:n_faces]:
         verts = [int(v) for v in verts_str.split()]
         faces.append(verts)
