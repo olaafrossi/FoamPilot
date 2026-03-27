@@ -22,8 +22,9 @@ RUN add-apt-repository -y ppa:deadsnakes/ppa && \
     update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1
 
 # ── Python dependencies ──────────────────────────────────────────────
-RUN pip install --no-cache-dir --break-system-packages \
-        fastapi uvicorn[standard] websockets python-multipart
+COPY backend/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir --break-system-packages -r /tmp/requirements.txt && \
+    rm /tmp/requirements.txt
 
 # ── Non-root user ────────────────────────────────────────────────────
 RUN useradd -m -s /bin/bash openfoam && \
