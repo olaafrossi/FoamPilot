@@ -29,6 +29,13 @@
 **Depends on:** Streamline rendering implementation (animated TubeGeometry).
 **Added:** 2026-03-27
 
+### 'Run Again with Different Settings' Clone-and-Iterate
+**What:** Add a "Run Again with Different Settings" button on the Results page that clones the current case and re-enters the wizard at the Physics step with modified parameters.
+**Why:** Bridge to parametric studies — lets users iterate on a design without losing previous results. The most natural next action after seeing Cd/Cl numbers.
+**Pros:** Enables rapid design iteration, preserves history of runs.
+**Cons:** Requires case cloning logic, ~1-2hr CC effort.
+**Context:** The backend already has a `POST /cases/{name}/clone` endpoint. The UI would clone the case, navigate to Physics step, and let the user adjust velocity/BCs before re-running. Results comparison view would be a natural follow-on.
+**Depends on:** Wizard-first rearchitecture (current work).
 ## Aero Knowledge Engine Phase 2
 
 ### Laminar Solver Path (icoFoam)

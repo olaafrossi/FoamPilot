@@ -12,6 +12,10 @@ interface StepProps {
   goBack: () => void;
   completeStep: (step: number) => void;
   resetWizard: () => void;
+  velocity: number;
+  setVelocity: (v: number) => void;
+  geometryClass: string | null;
+  setGeometryClass: (c: string | null) => void;
 }
 
 function formatTime(seconds: number): string {

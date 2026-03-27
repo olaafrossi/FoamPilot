@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
-import { Rocket, FolderOpen, LayoutDashboard, Terminal, FileText, Settings } from "lucide-react";
+import { Rocket, FolderOpen, LayoutDashboard, Terminal, FileText, Settings, Upload } from "lucide-react";
 import { setConfig } from "./api";
 import type { AppConfig } from "./types";
 import { StatusProvider, useStatus } from "./hooks/useStatus";
@@ -64,6 +64,32 @@ function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const { status } = useStatus();
+  const [globalDragOver, setGlobalDragOver] = useState(false);
+
+  const handleGlobalDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    // Only show overlay for files
+    if (e.dataTransfer.types.includes("Files")) {
+      setGlobalDragOver(true);
+    }
+  }, []);
+
+  const handleGlobalDragLeave = useCallback((e: React.DragEvent) => {
+    // Only hide when leaving the window (relatedTarget is null)
+    if (!e.relatedTarget) {
+      setGlobalDragOver(false);
+    }
+  }, []);
+
+  const handleGlobalDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setGlobalDragOver(false);
+    const files = e.dataTransfer.files;
+    if (files.length > 0 && files[0].name.toLowerCase().endsWith(".stl")) {
+      // Navigate to wizard — the GeometryStep will handle the file via its own drop zone
+      navigate("/wizard");
+    }
+  }, [navigate]);
 
   const activeId = [...NAV_ITEMS, SETTINGS_ITEM].find(
     (item) => location.pathname.startsWith(item.path),
@@ -82,7 +108,37 @@ function AppShell() {
   })();
 
   return (
-    <div className="flex flex-col h-screen w-screen" style={{ fontFamily: "var(--font-ui)" }}>
+    <div
+      className="flex flex-col h-screen w-screen relative"
+      style={{ fontFamily: "var(--font-ui)" }}
+      onDragOver={handleGlobalDragOver}
+      onDragLeave={handleGlobalDragLeave}
+      onDrop={handleGlobalDrop}
+    >
+      {/* Global STL drop zone overlay */}
+      {globalDragOver && (
+        <div
+          className="absolute inset-0 z-50 flex items-center justify-center"
+          style={{
+            background: "rgba(9, 9, 11, 0.85)",
+            backdropFilter: "blur(4px)",
+          }}
+        >
+          <div
+            className="p-12 text-center border-2 border-dashed"
+            style={{ borderColor: "var(--accent)", borderRadius: 8 }}
+          >
+            <Upload size={48} style={{ color: "var(--accent)", margin: "0 auto 16px" }} />
+            <p className="text-[18px] font-semibold mb-2" style={{ color: "var(--fg)", fontFamily: "var(--font-display)" }}>
+              Drop your STL here
+            </p>
+            <p className="text-[13px]" style={{ color: "var(--fg-muted)" }}>
+              Release to start a new simulation
+            </p>
+          </div>
+        </div>
+      )}
+
       <div className="flex flex-1 min-h-0">
         {/* Activity Bar — 48px icon strip */}
         <nav

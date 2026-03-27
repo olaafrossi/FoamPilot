@@ -12,6 +12,8 @@ export default function WizardPage() {
   const [completedSteps, setCompletedSteps] = useState<Set<number>>(new Set());
   const [caseName, setCaseName] = useState<string | null>(null);
   const [templateName, setTemplateName] = useState<string | null>(null);
+  const [velocity, setVelocity] = useState(20);
+  const [geometryClass, setGeometryClass] = useState<string | null>(null);
 
   const completeStep = useCallback((step: number) => {
     setCompletedSteps((prev) => new Set([...prev, step]));
@@ -31,9 +33,15 @@ export default function WizardPage() {
     setCompletedSteps(new Set());
     setCaseName(null);
     setTemplateName(null);
+    setVelocity(20);
+    setGeometryClass(null);
   }, []);
 
-  const stepProps = { caseName, setCaseName, templateName, setTemplateName, goNext, goBack, completeStep };
+  const stepProps = {
+    caseName, setCaseName, templateName, setTemplateName,
+    goNext, goBack, completeStep,
+    velocity, setVelocity, geometryClass, setGeometryClass,
+  };
 
   return (
     <div className="flex flex-col h-full">
