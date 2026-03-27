@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from "react";
-import { Eye, EyeOff, Layers, Palette, Wind } from "lucide-react";
-import FieldMeshRenderer from "./FieldMeshRenderer";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Eye, EyeOff, Layers, Palette, Wind, ChevronDown, ChevronUp } from "lucide-react";
+import FieldMeshRenderer, { getDefaultVisiblePatches } from "./FieldMeshRenderer";
 import { getFieldData } from "../api";
 import { getAvailableColorMaps, generateColorLUT } from "../lib/colormap";
 import { generateSeedPoints } from "../lib/streamlines";
@@ -78,6 +78,7 @@ export default function VisualizationPanel({ caseName }: VisualizationPanelProps
   const [opacity, setOpacity] = useState(1);
   const [showWireframe, setShowWireframe] = useState(false);
   const [showStreamlines, setShowStreamlines] = useState(false);
+  const [showPatchPanel, setShowPatchPanel] = useState(false);
 
   // Available options from the backend response
   const [availableFields, setAvailableFields] = useState<string[]>([]);
@@ -85,6 +86,10 @@ export default function VisualizationPanel({ caseName }: VisualizationPanelProps
 
   // Seed points for streamlines (generated from mesh)
   const [seeds, setSeeds] = useState<number[][]>([]);
+
+  // Patch visibility — persisted across field/time changes
+  const [patchVisibility, setPatchVisibility] = useState<Record<string, boolean>>({});
+  const patchVisibilityInitialized = useRef(false);
 
   const loadFieldData = useCallback(async (field: string, time: string) => {
     setLoading(true);
@@ -94,6 +99,12 @@ export default function VisualizationPanel({ caseName }: VisualizationPanelProps
       setFieldData(data);
       setAvailableFields(data.available_fields ?? []);
       setAvailableTimes(data.available_times ?? []);
+
+      // Initialize patch visibility only on first load (persist across field/time changes)
+      if (!patchVisibilityInitialized.current && data.patches?.length > 0) {
+        setPatchVisibility(getDefaultVisiblePatches(data.patches));
+        patchVisibilityInitialized.current = true;
+      }
 
       // Generate streamline seeds from the mesh
       if (data.vertices.length > 0 && data.faces.length > 0) {
@@ -111,6 +122,7 @@ export default function VisualizationPanel({ caseName }: VisualizationPanelProps
 
   // Load initial field data
   useEffect(() => {
+    patchVisibilityInitialized.current = false;
     loadFieldData(selectedField, selectedTime);
   }, [caseName]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -122,6 +134,10 @@ export default function VisualizationPanel({ caseName }: VisualizationPanelProps
   const handleTimeChange = (time: string) => {
     setSelectedTime(time);
     loadFieldData(selectedField, time);
+  };
+
+  const togglePatch = (name: string) => {
+    setPatchVisibility((prev) => ({ ...prev, [name]: !prev[name] }));
   };
 
   return (
@@ -248,7 +264,53 @@ export default function VisualizationPanel({ caseName }: VisualizationPanelProps
             Streamlines
           </button>
         )}
+
+        {/* Patch visibility toggle */}
+        {fieldData?.patches && fieldData.patches.length > 0 && (
+          <button
+            onClick={() => setShowPatchPanel(!showPatchPanel)}
+            className={`flex items-center gap-1 px-2 py-1 text-[12px] border ${
+              showPatchPanel
+                ? "bg-[var(--accent-bg)] border-[var(--accent-bg)] text-white"
+                : "bg-transparent border-[var(--border)] text-[var(--fg-muted)] hover:text-[var(--fg)]"
+            }`}
+            style={{ borderRadius: 2 }}
+          >
+            <Layers size={12} />
+            Patches
+            {showPatchPanel ? <ChevronUp size={10} /> : <ChevronDown size={10} />}
+          </button>
+        )}
       </div>
+
+      {/* Patch visibility panel */}
+      {showPatchPanel && fieldData?.patches && (
+        <div
+          className="flex flex-wrap gap-3 mb-3 p-3"
+          style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
+        >
+          {fieldData.patches.map((patch) => (
+            <label
+              key={patch.name}
+              className="flex items-center gap-1.5 cursor-pointer"
+              style={{ fontSize: 12 }}
+            >
+              <input
+                type="checkbox"
+                checked={patchVisibility[patch.name] ?? false}
+                onChange={() => togglePatch(patch.name)}
+                style={{ accentColor: "var(--accent)" }}
+              />
+              <span style={{ color: patchVisibility[patch.name] ? "var(--fg)" : "var(--fg-muted)" }}>
+                {patch.name}
+              </span>
+              <span style={{ color: "var(--fg-muted)", fontSize: 10 }}>
+                ({patch.nFaces})
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
 
       {/* Visualization area */}
       <div className="flex gap-4">
@@ -276,6 +338,7 @@ export default function VisualizationPanel({ caseName }: VisualizationPanelProps
               showWireframe={showWireframe}
               showStreamlines={showStreamlines}
               streamlineSeeds={seeds}
+              patchVisibility={patchVisibility}
             />
           )}
         </div>

@@ -78,6 +78,27 @@ async def upload_geometry(name: str, file: UploadFile = File(...)):
     if src_zero.is_dir() and not dst_zero.exists():
         shutil.copytree(str(src_zero), str(dst_zero))
 
+    # -- Rename template patch references to match uploaded geometry --
+    # The template uses "motorBikeGroup" but snappyHexMesh will create
+    # "{stem}Group" based on the uploaded filename.  Replace in both
+    # 0/ (boundary conditions) and system/ (function objects like forceCoeffs).
+    stl_stem = Path(file.filename).stem  # e.g. "Ahmed" from "Ahmed.stl"
+    new_group = f"{stl_stem}Group"
+    if new_group != "motorBikeGroup":
+        for search_dir in [dst_zero, dst_system]:
+            if not search_dir.is_dir():
+                continue
+            for foam_file_path in search_dir.rglob("*"):
+                if not foam_file_path.is_file() or foam_file_path.name.startswith("."):
+                    continue
+                try:
+                    text = foam_file_path.read_text(encoding="utf-8")
+                    if "motorBikeGroup" in text:
+                        text = text.replace("motorBikeGroup", new_group)
+                        foam_file_path.write_text(text, encoding="utf-8")
+                except (UnicodeDecodeError, OSError):
+                    pass  # skip binary or unreadable files
+
     # Copy constant/ directory (transport/turbulence properties, triSurface/)
     src_const = template_dir / "constant"
     dst_const = case_path / "constant"
@@ -92,6 +113,11 @@ async def upload_geometry(name: str, file: UploadFile = File(...)):
     dest_file = tri_surface_dir / file.filename
     contents = await file.read()
     dest_file.write_bytes(contents)
+
+    # -- Create .foam file for ParaView (empty marker file) --
+    foam_file = case_path / f"{name}.foam"
+    if not foam_file.exists():
+        foam_file.touch()
 
     # -- Parse STL bounds (only for .stl files) --
     if ext == ".stl":
