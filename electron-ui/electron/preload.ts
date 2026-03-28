@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld("foamPilot", {
     stop: () => ipcRenderer.invoke("docker:stop"),
     ensureSetup: () => ipcRenderer.invoke("docker:ensure-setup"),
     healthCheck: () => ipcRenderer.invoke("docker:health"),
+    ping: () => ipcRenderer.invoke("docker:ping"),
     onProgress: (cb: (msg: string) => void) => {
       const handler = (_: any, msg: string) => cb(msg);
       ipcRenderer.on("docker:progress", handler);

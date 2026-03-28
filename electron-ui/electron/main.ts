@@ -168,6 +168,19 @@ ipcMain.handle("docker:health", async () => {
   return dockerManager.healthCheck();
 });
 
+/** Fast single-shot health ping (no retries, 3s timeout) for status bar polling. */
+ipcMain.handle("docker:ping", async () => {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch("http://localhost:8000/health", { signal: controller.signal });
+    clearTimeout(timeout);
+    return res.ok;
+  } catch {
+    return false;
+  }
+});
+
 // ── Update IPC handlers ──────────────────────────────────────────────
 
 ipcMain.handle("update:check", async () => {
