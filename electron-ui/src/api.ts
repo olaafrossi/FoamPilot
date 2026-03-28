@@ -157,6 +157,42 @@ export async function getReynolds(
   return res.json();
 }
 
+// ---------------------------------------------------------------------------
+// Slice plane data
+// ---------------------------------------------------------------------------
+
+export interface SliceData {
+  vertices: number[][];
+  faces: number[][];
+  values: number[];
+  min: number;
+  max: number;
+  field: string;
+  axis: string;
+  position: number;
+  message?: string;
+}
+
+export async function getSliceData(
+  caseName: string,
+  field: string,
+  time: string,
+  axis: string,
+  position: number,
+): Promise<SliceData> {
+  const params = new URLSearchParams({
+    field,
+    time,
+    axis,
+    position: String(position),
+  });
+  const res = await fetch(
+    api(`/cases/${caseName}/slice?${params.toString()}`),
+  );
+  if (!res.ok) throw new Error(`Failed to get slice data: ${res.statusText}`);
+  return res.json();
+}
+
 export function connectLogs(jobId: string, onLine: (line: string, stream: string) => void): WebSocket {
   const wsUrl = config.backendUrl.replace("http", "ws");
   const ws = new WebSocket(`${wsUrl}/logs/${jobId}`);

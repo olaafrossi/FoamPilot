@@ -164,6 +164,16 @@ export interface ReynoldsResult {
   regime: "laminar" | "transitional" | "turbulent";
 }
 
+// Diagnostic types
+export interface DiagnosticResult {
+  passed: boolean;
+  checks: {
+    name: string;
+    status: "pass" | "fail" | "warn" | "skip";
+    message: string;
+  }[];
+}
+
 // Docker & Update types
 export interface DockerFullStatus {
   installed: boolean;
@@ -202,6 +212,7 @@ declare global {
         ensureSetup: () => Promise<{ ok: boolean; error?: string }>;
         healthCheck: () => Promise<boolean>;
         ping: () => Promise<boolean>;
+        diagnostics: () => Promise<DiagnosticResult>;
         onProgress: (cb: (msg: string) => void) => () => void;
         onStatusChange: (cb: (status: any) => void) => () => void;
       };

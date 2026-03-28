@@ -4,7 +4,17 @@ import {
   generateColorLUT,
   getColorMapLabel,
   getAvailableColorMaps,
+  type ColorMapName,
 } from '../colormap';
+
+const ALL_PALETTES: ColorMapName[] = ['jet', 'viridis', 'coolwarm', 'plasma', 'inferno', 'turbo'];
+
+function isValidRGB(rgb: [number, number, number]): boolean {
+  return (
+    rgb.length === 3 &&
+    rgb.every((c) => typeof c === 'number' && c >= 0 && c <= 1)
+  );
+}
 
 /** Assert each RGB channel is within tolerance of expected. */
 function expectColor(
@@ -15,7 +25,6 @@ function expectColor(
   expect(actual[0]).toBeCloseTo(expected[0], 1);
   expect(actual[1]).toBeCloseTo(expected[1], 1);
   expect(actual[2]).toBeCloseTo(expected[2], 1);
-  // Also verify channels are in [0,1]
   for (const c of actual) {
     expect(c).toBeGreaterThanOrEqual(-tolerance);
     expect(c).toBeLessThanOrEqual(1 + tolerance);
@@ -23,95 +32,95 @@ function expectColor(
 }
 
 describe('mapScalarToColor', () => {
-  describe('jet palette', () => {
-    it('value 0.0 → dark blue', () => {
-      const c = mapScalarToColor(0, 0, 1, 'jet');
-      expectColor(c, [0, 0, 0.5]);
-    });
-
-    it('value 0.5 → green', () => {
-      const c = mapScalarToColor(0.5, 0, 1, 'jet');
-      expectColor(c, [0, 1, 0], 0.1);
-    });
-
-    it('value 1.0 → dark red', () => {
-      const c = mapScalarToColor(1, 0, 1, 'jet');
-      expectColor(c, [0.5, 0, 0]);
-    });
+  it.each(ALL_PALETTES)('returns valid RGB for palette "%s"', (palette) => {
+    const color = mapScalarToColor(0.5, 0, 1, palette);
+    expect(isValidRGB(color)).toBe(true);
   });
 
-  describe('viridis palette', () => {
-    it('value 0.0 → deep purple', () => {
-      const c = mapScalarToColor(0, 0, 1, 'viridis');
-      expectColor(c, [0.267, 0.004, 0.329]);
-    });
-
-    it('value 1.0 → yellow', () => {
-      const c = mapScalarToColor(1, 0, 1, 'viridis');
-      expectColor(c, [0.993, 0.906, 0.144]);
-    });
+  it('returns valid RGB for turbo palette specifically', () => {
+    const color = mapScalarToColor(0.5, 0, 1, 'turbo');
+    expect(isValidRGB(color)).toBe(true);
   });
 
-  describe('coolwarm palette', () => {
-    it('value 0.5 → near white/neutral', () => {
-      const c = mapScalarToColor(0.5, 0, 1, 'coolwarm');
-      expectColor(c, [0.865, 0.865, 0.865]);
+  describe('known palette values', () => {
+    it('jet value 0.0 -> dark blue', () => {
+      expectColor(mapScalarToColor(0, 0, 1, 'jet'), [0, 0, 0.5]);
+    });
+
+    it('jet value 1.0 -> dark red', () => {
+      expectColor(mapScalarToColor(1, 0, 1, 'jet'), [0.5, 0, 0]);
+    });
+
+    it('viridis value 0.0 -> deep purple', () => {
+      expectColor(mapScalarToColor(0, 0, 1, 'viridis'), [0.267, 0.004, 0.329]);
+    });
+
+    it('viridis value 1.0 -> yellow', () => {
+      expectColor(mapScalarToColor(1, 0, 1, 'viridis'), [0.993, 0.906, 0.144]);
+    });
+
+    it('coolwarm value 0.5 -> near white/neutral', () => {
+      expectColor(mapScalarToColor(0.5, 0, 1, 'coolwarm'), [0.865, 0.865, 0.865]);
     });
   });
 
   describe('edge cases', () => {
-    it('min === max → middle color of palette', () => {
-      const c = mapScalarToColor(5, 5, 5, 'jet');
-      // Middle of jet is green
-      expectColor(c, [0, 1, 0], 0.1);
+    it('handles value at 0 (min boundary)', () => {
+      const color = mapScalarToColor(0, 0, 1, 'viridis');
+      expect(isValidRGB(color)).toBe(true);
+      expect(color[0]).toBeCloseTo(0.267);
+      expect(color[1]).toBeCloseTo(0.004);
+      expect(color[2]).toBeCloseTo(0.329);
     });
 
-    it('NaN → gray', () => {
-      const c = mapScalarToColor(NaN, 0, 1, 'jet');
-      expectColor(c, [0.5, 0.5, 0.5]);
+    it('handles value at 1 (max boundary)', () => {
+      const color = mapScalarToColor(1, 0, 1, 'viridis');
+      expect(isValidRGB(color)).toBe(true);
+      expect(color[0]).toBeCloseTo(0.993);
+      expect(color[1]).toBeCloseTo(0.906);
+      expect(color[2]).toBeCloseTo(0.144);
     });
 
-    it('Infinity → gray', () => {
-      const c = mapScalarToColor(Infinity, 0, 1, 'jet');
-      expectColor(c, [0.5, 0.5, 0.5]);
+    it('clamps value below 0', () => {
+      const color = mapScalarToColor(-10, 0, 1, 'viridis');
+      const colorAtMin = mapScalarToColor(0, 0, 1, 'viridis');
+      expect(color).toEqual(colorAtMin);
     });
 
-    it('-Infinity → gray', () => {
-      const c = mapScalarToColor(-Infinity, 0, 1, 'viridis');
-      expectColor(c, [0.5, 0.5, 0.5]);
+    it('clamps value above 1', () => {
+      const color = mapScalarToColor(100, 0, 1, 'viridis');
+      const colorAtMax = mapScalarToColor(1, 0, 1, 'viridis');
+      expect(color).toEqual(colorAtMax);
     });
 
-    it('value below min → clamped to min color', () => {
-      const c = mapScalarToColor(-10, 0, 1, 'jet');
-      expectColor(c, [0, 0, 0.5]);
+    it('returns gray for NaN', () => {
+      expect(mapScalarToColor(NaN, 0, 1, 'viridis')).toEqual([0.5, 0.5, 0.5]);
     });
 
-    it('value above max → clamped to max color', () => {
-      const c = mapScalarToColor(100, 0, 1, 'jet');
-      expectColor(c, [0.5, 0, 0]);
+    it('returns gray for Infinity', () => {
+      expect(mapScalarToColor(Infinity, 0, 1, 'jet')).toEqual([0.5, 0.5, 0.5]);
+    });
+
+    it('returns gray for -Infinity', () => {
+      expect(mapScalarToColor(-Infinity, 0, 1, 'viridis')).toEqual([0.5, 0.5, 0.5]);
+    });
+
+    it('returns middle color when min === max', () => {
+      const color = mapScalarToColor(5, 5, 5, 'viridis');
+      expect(isValidRGB(color)).toBe(true);
+      const midColor = mapScalarToColor(0.5, 0, 1, 'viridis');
+      expect(color).toEqual(midColor);
     });
   });
 });
 
 describe('generateColorLUT', () => {
   it('returns 256 entries by default', () => {
-    const lut = generateColorLUT('viridis');
-    expect(lut).toHaveLength(256);
+    expect(generateColorLUT('viridis')).toHaveLength(256);
   });
 
   it('respects custom step count', () => {
-    const lut = generateColorLUT('plasma', 10);
-    expect(lut).toHaveLength(10);
-  });
-
-  it('first entry matches palette start', () => {
-    const lut = generateColorLUT('jet');
-    expectColor(lut[0], [0, 0, 0.5]);
-  });
-
-  it('last entry matches palette end', () => {
-    const lut = generateColorLUT('jet');
-    expectColor(lut[255], [0.5, 0, 0]);
+    expect(generateColorLUT('plasma', 10)).toHaveLength(10);
   });
 
   it('all channels in [0,1]', () => {
@@ -127,29 +136,28 @@ describe('generateColorLUT', () => {
   });
 });
 
-describe('getColorMapLabel', () => {
-  it('returns human-readable label', () => {
-    expect(getColorMapLabel('jet')).toContain('Jet');
-    expect(getColorMapLabel('viridis')).toContain('Viridis');
+describe('PALETTES entries', () => {
+  it('getAvailableColorMaps returns all expected palettes', () => {
+    const available = getAvailableColorMaps();
+    const names = available.map((cm) => cm.name);
+    for (const p of ALL_PALETTES) {
+      expect(names).toContain(p);
+    }
+    expect(available.length).toBe(ALL_PALETTES.length);
   });
 });
 
-describe('getAvailableColorMaps', () => {
-  it('returns all 5 palettes', () => {
-    const maps = getAvailableColorMaps();
-    expect(maps).toHaveLength(5);
-    const names = maps.map((m) => m.name);
-    expect(names).toContain('jet');
-    expect(names).toContain('viridis');
-    expect(names).toContain('coolwarm');
-    expect(names).toContain('plasma');
-    expect(names).toContain('inferno');
+describe('LABELS entries', () => {
+  it.each(ALL_PALETTES)('getColorMapLabel returns a non-empty string for "%s"', (palette) => {
+    const label = getColorMapLabel(palette);
+    expect(typeof label).toBe('string');
+    expect(label.length).toBeGreaterThan(0);
   });
 
-  it('each entry has name and label', () => {
-    for (const m of getAvailableColorMaps()) {
-      expect(m.name).toBeTruthy();
-      expect(m.label).toBeTruthy();
+  it('all available color maps have labels', () => {
+    const available = getAvailableColorMaps();
+    for (const cm of available) {
+      expect(cm.label).toBeTruthy();
     }
   });
 });

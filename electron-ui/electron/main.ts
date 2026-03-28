@@ -168,6 +168,10 @@ ipcMain.handle("docker:health", async () => {
   return dockerManager.healthCheck();
 });
 
+ipcMain.handle("docker:diagnostics", async () => {
+  return dockerManager.runDiagnostics();
+});
+
 /** Fast single-shot health ping (no retries, 3s timeout) for status bar polling. */
 ipcMain.handle("docker:ping", async () => {
   try {

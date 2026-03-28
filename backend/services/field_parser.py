@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import struct
 from pathlib import Path
@@ -739,3 +740,366 @@ def extract_boundary_field_data(
         result["vectors"] = np.column_stack([vx, vy, vz]).tolist()
 
     return result
+
+
+# ---------------------------------------------------------------------------
+# polyMesh: owner / neighbour
+# ---------------------------------------------------------------------------
+
+
+def _parse_binary_label_list(path: Path) -> np.ndarray:
+    """Parse a binary label list file (owner or neighbour).
+
+    Layout: after count and '(', N labels as int32 or int64.
+    """
+    raw_bytes = path.read_bytes()
+    text = raw_bytes.decode("utf-8", errors="replace")
+    header = _parse_foam_header(text)
+    clean = _strip_comments(text)
+
+    header_end = 0
+    hm = _HEADER_RE.search(clean)
+    if hm:
+        header_end = hm.end()
+
+    body = clean[header_end:]
+
+    # Determine label size
+    arch = header.get("arch", "")
+    label_size = 64 if "label=64" in arch else 32
+    label_fmt_char = "q" if label_size == 64 else "i"
+    label_bytes = 8 if label_size == 64 else 4
+
+    count_match = re.search(r"(\d+)\s*\(", body)
+    if not count_match:
+        raise ValueError(f"Cannot find label count in: {path}")
+
+    n = int(count_match.group(1))
+
+    text_paren_pos = body.index("(", count_match.start())
+    full_text_pos = header_end + text_paren_pos
+    byte_start = raw_bytes.index(b"(", max(0, full_text_pos - 50)) + 1
+    while byte_start < len(raw_bytes) and raw_bytes[byte_start] in (
+        ord("\n"), ord("\r"), ord(" "),
+    ):
+        byte_start += 1
+
+    data_bytes = n * label_bytes
+    values = struct.unpack(
+        f"<{n}{label_fmt_char}",
+        raw_bytes[byte_start : byte_start + data_bytes],
+    )
+    return np.array(values, dtype=np.int64 if label_size == 64 else np.int32)
+
+
+def parse_owner(case_dir: str | Path) -> np.ndarray:
+    """Parse constant/polyMesh/owner file. Returns array of cell indices (one per face)."""
+    path = Path(case_dir) / "constant" / "polyMesh" / "owner"
+    if not path.is_file():
+        raise FileNotFoundError(f"owner file not found: {path}")
+
+    raw_bytes = path.read_bytes()
+    text = raw_bytes.decode("utf-8", errors="replace")
+    header = _parse_foam_header(text)
+
+    if _is_binary(header):
+        return _parse_binary_label_list(path)
+
+    # ASCII: find the integer list
+    clean = _strip_comments(text)
+    header_end = 0
+    hm = _HEADER_RE.search(clean)
+    if hm:
+        header_end = hm.end()
+    body = clean[header_end:]
+
+    m = re.search(r"(\d+)\s*\(", body)
+    if not m:
+        raise ValueError(f"Cannot parse owner file: {path}")
+    count = int(m.group(1))
+    start = body.index("(", m.start()) + 1
+    end = body.index(")", start)
+    values = body[start:end].split()
+    return np.array([int(v) for v in values[:count]], dtype=np.int32)
+
+
+def parse_neighbour(case_dir: str | Path) -> np.ndarray:
+    """Parse constant/polyMesh/neighbour file. Returns array of cell indices (one per internal face)."""
+    path = Path(case_dir) / "constant" / "polyMesh" / "neighbour"
+    if not path.is_file():
+        raise FileNotFoundError(f"neighbour file not found: {path}")
+
+    raw_bytes = path.read_bytes()
+    text = raw_bytes.decode("utf-8", errors="replace")
+    header = _parse_foam_header(text)
+
+    if _is_binary(header):
+        return _parse_binary_label_list(path)
+
+    # ASCII: find the integer list
+    clean = _strip_comments(text)
+    header_end = 0
+    hm = _HEADER_RE.search(clean)
+    if hm:
+        header_end = hm.end()
+    body = clean[header_end:]
+
+    m = re.search(r"(\d+)\s*\(", body)
+    if not m:
+        raise ValueError(f"Cannot parse neighbour file: {path}")
+    count = int(m.group(1))
+    start = body.index("(", m.start()) + 1
+    end = body.index(")", start)
+    values = body[start:end].split()
+    return np.array([int(v) for v in values[:count]], dtype=np.int32)
+
+
+def compute_cell_centers(points: np.ndarray, faces: list, owner: np.ndarray, neighbour: np.ndarray) -> np.ndarray:
+    """Compute cell center positions. Returns (n_cells, 3) array."""
+    n_cells = int(max(owner.max(), neighbour.max())) + 1 if len(neighbour) > 0 else int(owner.max()) + 1
+    centers = np.zeros((n_cells, 3), dtype=np.float64)
+    counts = np.zeros(n_cells, dtype=np.int32)
+
+    # Accumulate face centers into cells
+    for fi, face in enumerate(faces):
+        fc = points[face].mean(axis=0)
+        cell_o = owner[fi]
+        centers[cell_o] += fc
+        counts[cell_o] += 1
+        if fi < len(neighbour):
+            cell_n = neighbour[fi]
+            centers[cell_n] += fc
+            counts[cell_n] += 1
+
+    # Avoid division by zero
+    counts = np.maximum(counts, 1)
+    centers /= counts[:, np.newaxis]
+    return centers
+
+
+# ---------------------------------------------------------------------------
+# Mesh cache (LRU keyed by case_dir + mtime of latest time directory)
+# ---------------------------------------------------------------------------
+
+_mesh_cache: dict = {}
+_MESH_CACHE_MAX = 5
+
+
+def _latest_time_mtime(case_dir: str) -> float:
+    """Return the mtime of the latest time directory, or 0.0 if none."""
+    time_dirs = discover_time_directories(case_dir)
+    if not time_dirs:
+        return 0.0
+    latest_path = Path(case_dir) / time_dirs[-1]
+    try:
+        return latest_path.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def _get_cached_mesh(case_dir: str | Path):
+    """Get or parse mesh data with LRU caching.
+
+    Cache key is (case_dir, mtime) where mtime is the modification time of the
+    latest time directory, so the cache is invalidated when new results appear.
+    """
+    case_dir = str(case_dir)
+    try:
+        mtime = _latest_time_mtime(case_dir)
+        cache_key = (case_dir, mtime)
+    except Exception:
+        cache_key = (case_dir, 0.0)
+
+    if cache_key in _mesh_cache:
+        return _mesh_cache[cache_key]
+
+    # Evict oldest if cache is full
+    if len(_mesh_cache) >= _MESH_CACHE_MAX:
+        oldest = next(iter(_mesh_cache))
+        del _mesh_cache[oldest]
+
+    points = parse_points(case_dir)
+    raw_faces = parse_faces(case_dir)
+    owner = parse_owner(case_dir)
+    neighbour = parse_neighbour(case_dir)
+    cell_centers = compute_cell_centers(points, raw_faces, owner, neighbour)
+
+    result = {
+        "points": points,
+        "faces": raw_faces,
+        "owner": owner,
+        "neighbour": neighbour,
+        "cell_centers": cell_centers,
+    }
+    _mesh_cache[cache_key] = result
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Slice plane computation
+# ---------------------------------------------------------------------------
+
+
+def _clip_face_to_plane(
+    face_verts: np.ndarray, ax: int, position: float
+) -> np.ndarray:
+    """Clip a face polygon against the slice plane using Sutherland-Hodgman.
+
+    Parameters
+    ----------
+    face_verts : (N, 3) array of vertex positions forming the polygon
+    ax : axis index (0=x, 1=y, 2=z)
+    position : plane position along *ax*
+
+    Returns
+    -------
+    (M, 3) array of clipped polygon vertices lying on the plane.
+    Empty array if the face doesn't intersect the plane.
+    """
+    n = len(face_verts)
+    if n < 3:
+        return np.empty((0, 3), dtype=np.float64)
+
+    # Signed distances from each vertex to the plane
+    dists = face_verts[:, ax] - position
+
+    # Collect intersection points where edges cross the plane
+    clipped: list[np.ndarray] = []
+    for i in range(n):
+        j = (i + 1) % n
+        di, dj = dists[i], dists[j]
+
+        if abs(di) < 1e-14:
+            # Vertex i is on the plane
+            pt = face_verts[i].copy()
+            pt[ax] = position
+            clipped.append(pt)
+        elif di * dj < 0:
+            # Edge crosses the plane — compute intersection
+            t = di / (di - dj)
+            pt = face_verts[i] + t * (face_verts[j] - face_verts[i])
+            pt[ax] = position  # snap to exact plane position
+            clipped.append(pt)
+
+    if len(clipped) < 3:
+        return np.array(clipped, dtype=np.float64) if clipped else np.empty((0, 3), dtype=np.float64)
+
+    return np.array(clipped, dtype=np.float64)
+
+
+def slice_field(case_dir: str | Path, time_dir: str, field_name: str,
+                axis: str, position: float) -> dict:
+    """Compute a slice plane through the mesh.
+
+    For each internal face whose owner and neighbour cell centers straddle the
+    slice plane, clip the face polygon against the plane, interpolate the field
+    value, and fan-triangulate the resulting polygon.
+
+    Returns dict with vertices, faces (triangulated), values, min, max, etc.
+    """
+    mesh = _get_cached_mesh(case_dir)
+    points = mesh["points"]
+    raw_faces = mesh["faces"]
+    owner = mesh["owner"]
+    neighbour = mesh["neighbour"]
+    cell_centers = mesh["cell_centers"]
+
+    # Parse the field (internal values, not boundary)
+    field_type, field_values = parse_field(case_dir, time_dir, field_name)
+
+    # For vector fields, compute magnitude
+    if "vector" in field_type:
+        if field_values.ndim == 2:
+            magnitudes = np.sqrt(np.sum(field_values ** 2, axis=1))
+        else:
+            magnitudes = field_values
+    else:
+        magnitudes = field_values.flatten()
+
+    # Determine axis index
+    axis_map = {"x": 0, "y": 1, "z": 2}
+    ax = axis_map.get(axis.lower())
+    if ax is None:
+        raise ValueError(f"Invalid axis: {axis}. Must be x, y, or z.")
+
+    # Collect clipped polygons and their interpolated field values
+    slice_vertices: list[float] = []   # flat list, groups of 3
+    slice_faces: list[list[int]] = []  # triangulated index lists
+    slice_values: list[float] = []     # one value per vertex
+
+    vertex_offset = 0
+    n_internal = len(neighbour)
+
+    for fi in range(n_internal):
+        cell_o = int(owner[fi])
+        cell_n = int(neighbour[fi])
+
+        co = cell_centers[cell_o]
+        cn = cell_centers[cell_n]
+
+        # Check if the plane crosses between the two cell centers
+        d_o = co[ax] - position
+        d_n = cn[ax] - position
+
+        if d_o * d_n > 0:
+            continue  # both on the same side — no crossing
+
+        # Clip face polygon against the plane
+        face_idx = raw_faces[fi]
+        face_pts = points[face_idx]
+        clipped = _clip_face_to_plane(face_pts, ax, position)
+
+        if len(clipped) < 3:
+            continue
+
+        # Interpolate field value from owner/neighbour based on distance
+        denom = co[ax] - cn[ax]
+        if abs(denom) < 1e-30:
+            t = 0.5
+        else:
+            t = (position - cn[ax]) / denom
+
+        val_o = float(magnitudes[cell_o]) if cell_o < len(magnitudes) else 0.0
+        val_n = float(magnitudes[cell_n]) if cell_n < len(magnitudes) else 0.0
+        val = t * val_o + (1.0 - t) * val_n
+
+        # Append clipped polygon vertices
+        n_clip = len(clipped)
+        for v in clipped:
+            slice_vertices.extend(v.tolist())
+            slice_values.append(val)
+
+        # Fan-triangulate the clipped polygon
+        v0 = vertex_offset
+        for k in range(1, n_clip - 1):
+            slice_faces.append([v0, vertex_offset + k, vertex_offset + k + 1])
+
+        vertex_offset += n_clip
+
+    if vertex_offset == 0:
+        return {
+            "vertices": [],
+            "faces": [],
+            "values": [],
+            "min": 0.0,
+            "max": 0.0,
+            "field": field_name,
+            "axis": axis,
+            "position": position,
+            "message": "No cells intersected by this plane.",
+        }
+
+    # Reshape vertices to list of [x, y, z]
+    vert_array = np.array(slice_vertices, dtype=np.float64).reshape(-1, 3)
+    val_array = np.array(slice_values, dtype=np.float64)
+
+    return {
+        "vertices": vert_array.tolist(),
+        "faces": slice_faces,
+        "values": val_array.tolist(),
+        "min": float(val_array.min()),
+        "max": float(val_array.max()),
+        "field": field_name,
+        "axis": axis,
+        "position": position,
+    }
