@@ -13,7 +13,7 @@ import type { MeshTransform } from "./StreamlineRenderer";
 // Patch visibility helpers (exported for testing)
 // ---------------------------------------------------------------------------
 
-/** Default patches to show: anything ending with "Group", plus floor + side wall.
+/** Default patches to show: anything ending with "Group", plus floor + symmetry plane.
  *  Matching is case-insensitive. If no patches match, show ALL (fallback). */
 export function getDefaultVisiblePatches(
   patches: { name: string }[],
@@ -24,7 +24,7 @@ export function getDefaultVisiblePatches(
     vis[p.name] =
       lower.endsWith("group") ||
       lower === "lowerwall" ||
-      lower === "frontandback";
+      lower === "symmetryplane";
   }
   // Fallback: if nothing would be visible, show everything
   const anyVisible = Object.values(vis).some(Boolean);
