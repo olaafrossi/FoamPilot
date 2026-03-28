@@ -1,7 +1,7 @@
 import type { AppConfig, Template, JobResponse, MeshQuality, AeroResults, CaseInfo, FieldData, AeroSuggestions, GeometryClassification, YPlusResult, ReynoldsResult } from "./types";
 
 let config: AppConfig = {
-  backendUrl: "http://localhost:8000",
+  backendUrl: "http://127.0.0.1:8000",
   localCasesPath: "",
   paraViewPath: "",
   cores: 10,
@@ -154,6 +154,42 @@ export async function getReynolds(
 ): Promise<ReynoldsResult> {
   const res = await fetch(api(`/cases/${caseName}/reynolds?velocity=${velocity}`));
   if (!res.ok) throw new Error(`Failed to calculate Re: ${res.statusText}`);
+  return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Slice plane data
+// ---------------------------------------------------------------------------
+
+export interface SliceData {
+  vertices: number[][];
+  faces: number[][];
+  values: number[];
+  min: number;
+  max: number;
+  field: string;
+  axis: string;
+  position: number;
+  message?: string;
+}
+
+export async function getSliceData(
+  caseName: string,
+  field: string,
+  time: string,
+  axis: string,
+  position: number,
+): Promise<SliceData> {
+  const params = new URLSearchParams({
+    field,
+    time,
+    axis,
+    position: String(position),
+  });
+  const res = await fetch(
+    api(`/cases/${caseName}/slice?${params.toString()}`),
+  );
+  if (!res.ok) throw new Error(`Failed to get slice data: ${res.statusText}`);
   return res.json();
 }
 

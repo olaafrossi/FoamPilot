@@ -2,6 +2,7 @@ import { execFile, spawn, ChildProcess } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import * as net from "net";
+import * as os from "os";
 import { app } from "electron";
 
 export interface DockerStatus {
@@ -9,6 +10,17 @@ export interface DockerStatus {
   version?: string;
   running?: boolean;
   composeAvailable?: boolean;
+}
+
+export interface DiagnosticCheck {
+  name: string;
+  status: "pass" | "fail" | "warn" | "skip";
+  message: string;
+}
+
+export interface DiagnosticResult {
+  passed: boolean;
+  checks: DiagnosticCheck[];
 }
 
 export interface AppConfig {
@@ -188,7 +200,7 @@ export class DockerManager {
   }
 
   /** Health check: poll the backend /health endpoint with retries. */
-  async healthCheck(url: string = "http://localhost:8000/health", timeoutMs: number = 30000): Promise<boolean> {
+  async healthCheck(url: string = "http://127.0.0.1:8000/health", timeoutMs: number = 30000): Promise<boolean> {
     const start = Date.now();
     let delay = 500;
 
@@ -237,6 +249,165 @@ export class DockerManager {
     const devPath = path.join(__dirname, "..", "..", "docker", "docker-compose.prod.yml");
     if (fs.existsSync(devPath)) return devPath;
     return null;
+  }
+
+  /** Run a full suite of Docker environment diagnostics. */
+  async runDiagnostics(): Promise<DiagnosticResult> {
+    const checks: DiagnosticCheck[] = [];
+
+    // 1. Docker installed
+    let dockerVersionRaw: string | null = null;
+    try {
+      dockerVersionRaw = await this.execWithTimeout("docker", ["--version"], 5000);
+      checks.push({
+        name: "Docker Installed",
+        status: "pass",
+        message: `Docker found: ${dockerVersionRaw.trim()}`,
+      });
+    } catch {
+      checks.push({
+        name: "Docker Installed",
+        status: "fail",
+        message: "Docker Desktop is not installed.",
+      });
+    }
+
+    // 2. Docker daemon running
+    try {
+      await this.execWithTimeout("docker", ["info"], 5000);
+      checks.push({
+        name: "Docker Daemon",
+        status: "pass",
+        message: "Docker daemon is running.",
+      });
+    } catch {
+      checks.push({
+        name: "Docker Daemon",
+        status: "fail",
+        message: "Docker Desktop is not running. Please start Docker Desktop.",
+      });
+    }
+
+    // 3. WSL2 status (Windows only)
+    if (process.platform === "win32") {
+      try {
+        await this.execWithTimeout("wsl", ["--status"], 5000);
+        checks.push({
+          name: "WSL2",
+          status: "pass",
+          message: "WSL2 is enabled.",
+        });
+      } catch {
+        checks.push({
+          name: "WSL2",
+          status: "fail",
+          message: "WSL2 is not enabled. Docker Desktop requires WSL2 on Windows.",
+        });
+      }
+    } else {
+      checks.push({
+        name: "WSL2",
+        status: "skip",
+        message: "WSL2 check skipped (not Windows).",
+      });
+    }
+
+    // 4. Disk space
+    try {
+      const freeMB = this.getFreeDiskSpaceMB();
+      const freeGB = freeMB / 1024;
+      if (freeGB < 5) {
+        checks.push({
+          name: "Disk Space",
+          status: "warn",
+          message: `Low disk space. FoamPilot needs at least 5 GB free. Available: ${freeGB.toFixed(1)} GB.`,
+        });
+      } else {
+        checks.push({
+          name: "Disk Space",
+          status: "pass",
+          message: `Disk space OK: ${freeGB.toFixed(1)} GB free.`,
+        });
+      }
+    } catch {
+      checks.push({
+        name: "Disk Space",
+        status: "warn",
+        message: "Could not determine free disk space.",
+      });
+    }
+
+    // 5. Docker version compatibility (minimum 20.10)
+    if (dockerVersionRaw) {
+      try {
+        const versionMatch = dockerVersionRaw.match(/(\d+)\.(\d+)/);
+        if (versionMatch) {
+          const major = parseInt(versionMatch[1], 10);
+          const minor = parseInt(versionMatch[2], 10);
+          if (major > 20 || (major === 20 && minor >= 10)) {
+            checks.push({
+              name: "Docker Version",
+              status: "pass",
+              message: `Docker version ${major}.${minor} meets minimum requirement (20.10).`,
+            });
+          } else {
+            checks.push({
+              name: "Docker Version",
+              status: "fail",
+              message: "Docker version is too old. Please update Docker Desktop.",
+            });
+          }
+        } else {
+          checks.push({
+            name: "Docker Version",
+            status: "warn",
+            message: "Could not parse Docker version string.",
+          });
+        }
+      } catch {
+        checks.push({
+          name: "Docker Version",
+          status: "warn",
+          message: "Could not determine Docker version.",
+        });
+      }
+    } else {
+      checks.push({
+        name: "Docker Version",
+        status: "skip",
+        message: "Skipped version check because Docker is not installed.",
+      });
+    }
+
+    const passed = checks.every((c) => c.status === "pass" || c.status === "skip");
+    return { passed, checks };
+  }
+
+  /** Get free disk space in MB for the drive containing the data directory. */
+  private getFreeDiskSpaceMB(): number {
+    // os.freemem() returns RAM; we need disk. Use statfsSync (Node 18.15+).
+    // Fall back to a conservative estimate if not available.
+    if (typeof fs.statfsSync === "function") {
+      const stats = fs.statfsSync(this.dataDir);
+      return (stats.bavail * stats.bsize) / (1024 * 1024);
+    }
+    // Fallback: use os.freemem as a rough proxy (not ideal, but won't crash)
+    return os.freemem() / (1024 * 1024);
+  }
+
+  /** Promisified execFile with a custom timeout. */
+  private execWithTimeout(command: string, args: string[], timeoutMs: number): Promise<string> {
+    return new Promise((resolve, reject) => {
+      execFile(command, args, { timeout: timeoutMs }, (err, stdout, stderr) => {
+        if (err) {
+          const error = err as any;
+          error.stderr = stderr;
+          reject(error);
+        } else {
+          resolve(stdout);
+        }
+      });
+    });
   }
 
   /** Promisified execFile wrapper. */

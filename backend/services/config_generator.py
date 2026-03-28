@@ -612,3 +612,119 @@ method          scotch;
 
 // ************************************************************************* //
 """
+
+
+# ---------------------------------------------------------------------------
+# Patch injection — ensure boundary condition files cover all blockMesh patches
+# ---------------------------------------------------------------------------
+
+# Default boundary conditions for patches that may be missing from templates.
+# Keys are patch names produced by generate_block_mesh_dict; values map
+# OpenFOAM field class to the BC entry text.
+_PATCH_DEFAULTS: dict[str, dict[str, str]] = {
+    "side": {
+        "volScalarField": "        type            zeroGradient;",
+        "volVectorField": "        type            zeroGradient;",
+    },
+    "symmetryPlane": {
+        "volScalarField": "        type            symmetryPlane;",
+        "volVectorField": "        type            symmetryPlane;",
+    },
+    "upperWall": {
+        "volScalarField": "        type            zeroGradient;",
+        "volVectorField": "        type            zeroGradient;",
+    },
+}
+
+# All patches that blockMeshDict creates for ground_vehicle domain
+BLOCK_MESH_PATCHES = ["symmetryPlane", "side", "inlet", "outlet", "lowerWall", "upperWall"]
+
+
+def _detect_field_class(text: str) -> str:
+    """Detect OpenFOAM field class from file header."""
+    if "volVectorField" in text:
+        return "volVectorField"
+    return "volScalarField"
+
+
+def ensure_patches_in_bc_files(zero_dir: Path) -> None:
+    """Ensure all blockMesh patches have entries in every BC file under 0/.
+
+    Reads each file in the 0/ directory, checks for missing patch names
+    in the boundaryField block, and appends default entries for any that
+    are missing.
+    """
+    if not zero_dir.is_dir():
+        return
+
+    for bc_file in zero_dir.iterdir():
+        if not bc_file.is_file() or bc_file.name.startswith("."):
+            continue
+        try:
+            text = bc_file.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+
+        if "boundaryField" not in text:
+            continue
+
+        field_class = _detect_field_class(text)
+        modified = False
+
+        for patch_name in BLOCK_MESH_PATCHES:
+            # Check if patch already has an entry (look for "patchName" or "patchName\n")
+            # Use a simple heuristic: the patch name followed by whitespace/newline and {
+            if _has_patch_entry(text, patch_name):
+                continue
+
+            # Get default BC for this patch
+            defaults = _PATCH_DEFAULTS.get(patch_name)
+            if not defaults:
+                continue
+
+            bc_text = defaults.get(field_class, defaults.get("volScalarField", ""))
+            if not bc_text:
+                continue
+
+            # Insert before the closing } of boundaryField
+            entry = f"\n    {patch_name}\n    {{\n{bc_text}\n    }}\n"
+            text = _insert_before_boundary_close(text, entry)
+            modified = True
+
+        if modified:
+            bc_file.write_text(text, encoding="utf-8")
+
+
+def _has_patch_entry(text: str, patch_name: str) -> bool:
+    """Check if a patch name appears as a dictionary entry in boundaryField."""
+    import re
+    # Match patch_name followed by optional whitespace and {
+    pattern = rf'^\s*{re.escape(patch_name)}\s*$|^\s*{re.escape(patch_name)}\s*\{{'
+    return bool(re.search(pattern, text, re.MULTILINE))
+
+
+def _insert_before_boundary_close(text: str, entry: str) -> str:
+    """Insert text before the closing brace of the boundaryField block."""
+    # Find "boundaryField" then track brace depth to find its closing }
+    idx = text.find("boundaryField")
+    if idx == -1:
+        return text
+
+    # Find the opening { after boundaryField
+    brace_start = text.find("{", idx)
+    if brace_start == -1:
+        return text
+
+    depth = 1
+    i = brace_start + 1
+    while i < len(text) and depth > 0:
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+        i += 1
+
+    # i is now just past the closing } of boundaryField
+    # Insert before the closing }
+    insert_pos = i - 1
+    return text[:insert_pos] + entry + text[insert_pos:]

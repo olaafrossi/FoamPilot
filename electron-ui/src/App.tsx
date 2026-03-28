@@ -430,7 +430,7 @@ export default function App() {
       });
     } else {
       const defaults: AppConfig = {
-        backendUrl: "http://localhost:8000",
+        backendUrl: "http://127.0.0.1:8000",
         localCasesPath: "C:\\Dev\\FoamPilot\\cases",
         paraViewPath: "C:\\Program Files\\ParaView 6.0.1\\bin\\paraview.exe",
         cores: 10,
@@ -440,6 +440,10 @@ export default function App() {
         const saved = localStorage.getItem("foampilot-config");
         if (saved) {
           const parsed = JSON.parse(saved);
+          // Fix legacy localhost URLs (IPv6 breaks Docker on Windows)
+          if (parsed.backendUrl?.includes("localhost")) {
+            parsed.backendUrl = parsed.backendUrl.replace("localhost", "127.0.0.1");
+          }
           Object.assign(defaults, parsed);
         }
       } catch { /* ignore parse errors */ }

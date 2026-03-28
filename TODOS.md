@@ -2,6 +2,66 @@
 
 ## Deferred
 
+### Extract Spatial Hash Grid Module
+**What:** Extract the spatial hash grid from `streamlines.ts:traceStreamlines()` into its own `lib/spatial-hash.ts` module.
+**Why:** The spatial hash grid (10x10x10 cells, triangle-to-cell mapping) is currently embedded inside `traceStreamlines()`. ParticleRenderer needs the same grid for per-frame velocity lookups. Without extraction, the grid-building logic (~60 lines) would be duplicated.
+**Pros:** Single source of truth for spatial hashing. Both streamlines and particles share the same tested code path.
+**Cons:** Minor refactor of streamlines.ts to import from the new module.
+**Context:** The hash grid in `streamlines.ts` (around line 80-140) builds a spatial index mapping 3D cells to triangle indices. `ParticleRenderer` will call the same `findContainingTriangle()` function every frame for every particle. Extract: `buildSpatialHash(vertices, faces, gridSize)` and `findContainingTriangle(point, hash, vertices, faces)`.
+**Effort:** XS (CC: ~15 min) | **Priority:** P1
+**Depends on:** Nothing. Should be done before ParticleRenderer implementation.
+**Added:** 2026-03-28
+
+### Set Up Playwright E2E Test Framework
+**What:** Install Playwright, configure for Electron testing, and write the first 3 E2E tests covering slice plane interaction, point probing, and screenshot export.
+**Why:** The eng review identified 6 user flows that unit tests cannot cover: slice drag interaction, probe click-to-value, screenshot download, split-view camera sync, particle animation, and Docker diagnostics panel. These require real browser interaction.
+**Pros:** Catches integration bugs that unit tests miss. Playwright supports Electron natively.
+**Cons:** E2E tests are slower (~30s each) and require a running Docker container for backend.
+**Context:** Playwright has first-class Electron support via `_electron.launch()`. Test pattern: launch app, navigate to Results step with a pre-solved case, interact with viz controls, assert visual state. Start with the 3 highest-value flows, add remaining 3 later.
+**Effort:** M (CC: ~2 hr) | **Priority:** P2
+**Depends on:** Visualization upgrade implementation (needs features to test).
+**Added:** 2026-03-28
+
+### Add Test Execution to GitHub Actions CI
+**What:** Add `vitest run` and `pytest` steps to the existing release.yml GitHub Actions workflow so tests run on every PR and push.
+**Why:** 158 existing tests + 54 planned tests exist but never run in CI. A passing test suite on every PR prevents regressions from landing.
+**Pros:** Automated regression detection. Confidence in every merge.
+**Cons:** Adds ~2-3min to CI pipeline. Backend tests need Python + numpy in the runner.
+**Context:** The workflow at `.github/workflows/release.yml` already builds the Electron app and Docker image. Add two steps before the build: (1) `cd electron-ui && npm ci && npm test` for frontend, (2) `cd backend && pip install -r requirements.txt && pytest` for backend. Use a matrix strategy or sequential steps.
+**Effort:** S (CC: ~30 min) | **Priority:** P1
+**Depends on:** Nothing.
+**Added:** 2026-03-28
+
+### Memory Budget Guard for Split-View Field Loading
+**What:** Check Electron renderer process memory before loading the second field in split-view mode. Warn and offer to cancel if estimated memory would exceed 1.5GB.
+**Why:** Each field dataset for a 500K-vertex mesh is ~100-200MB (vertices + values + vectors). Split-view loads TWO datasets. On machines with 4GB RAM, this could push the renderer process into swapping or OOM.
+**Pros:** Prevents crashes on memory-constrained machines. Clear user-facing warning.
+**Cons:** Memory estimation is approximate (depends on Three.js BufferGeometry overhead).
+**Context:** Use `performance.memory` (Chrome/Electron) or `process.memoryUsage()` to check heap before fetching the second field. If `usedJSHeapSize > 1.2GB`, show warning: "Loading a second field may use significant memory. Continue?" The 1.5GB threshold leaves headroom for Three.js scene graph overhead.
+**Effort:** S (CC: ~30 min) | **Priority:** P2
+**Depends on:** Split-view implementation.
+**Added:** 2026-03-28
+
+### Adaptive Particle Count Based on GPU Capability
+**What:** Auto-detect GPU performance and adjust particle count dynamically (2000 on integrated, 10000 on discrete).
+**Why:** The particle system is the highest-risk viz feature. Without adaptive count, it could freeze on low-end hardware or look sparse on high-end.
+**Pros:** Best experience on every machine. No manual tuning needed.
+**Cons:** GPU performance detection via WebGL renderer info is limited. Frame-time-based adaptation (halve if >20ms, double if <10ms) is more reliable but reactive.
+**Context:** Monitor requestAnimationFrame timing in the ParticleRenderer component. Start at 2000 particles. If frame time exceeds 20ms (50fps threshold), halve count. If consistently under 10ms, double up to 10000 max.
+**Effort:** S (CC: ~30 min) | **Priority:** P1
+**Depends on:** GPU particle system implementation.
+**Added:** 2026-03-28
+
+### WebGL Context Loss Recovery
+**What:** Listen for `webglcontextlost` event, show a recovery banner, reinitialize renderer on click.
+**Why:** WebGL context loss happens on any machine (GPU driver crash, memory pressure, sleep/wake). Without recovery, user sees a black canvas and must restart the app.
+**Pros:** Graceful recovery from a common failure mode.
+**Cons:** Reinitializing the Three.js scene means reloading field data (a few seconds).
+**Context:** Standard pattern: `canvas.addEventListener('webglcontextlost', handler)`. Show banner: "Graphics context lost. Click to reload visualization." React-three-fiber exposes the canvas ref for event binding.
+**Effort:** XS (CC: ~15 min) | **Priority:** P1
+**Depends on:** Nothing.
+**Added:** 2026-03-28
+
 ### Sample Geometry Files for New Templates
 **What:** Source or create freely-licensed STL geometry files for the raceCar, smallPlane, and fixedWingDrone templates.
 **Why:** Templates without geometry show "Bring your own STL" in the wizard. Adding sample geometry makes them fully runnable out of the box (click template, mesh, solve, visualize).

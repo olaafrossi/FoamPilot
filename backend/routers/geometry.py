@@ -15,6 +15,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from services.config_generator import (
+    ensure_patches_in_bc_files,
     generate_block_mesh_dict,
     generate_decompose_par_dict,
     generate_snappy_hex_mesh_dict,
@@ -28,6 +29,7 @@ from services.field_parser import (
     discover_time_directories,
     extract_boundary_field_data,
     resolve_time,
+    slice_field,
 )
 from services.foam_runner import list_jobs
 from services.parsers import AeroResults, MeshQuality, parse_check_mesh, parse_force_coeffs
@@ -187,6 +189,9 @@ async def upload_geometry(
         if FOAM_CORES > 1:
             decompose_dict = generate_decompose_par_dict(FOAM_CORES)
             (system_dir / "decomposeParDict").write_text(decompose_dict, encoding="utf-8")
+
+        # Ensure all blockMesh patches have boundary condition entries
+        ensure_patches_in_bc_files(case_path / "0")
 
         return {
             "filename": file.filename,
@@ -374,3 +379,39 @@ async def field_data(name: str, field: str = "p", time: str = "latest"):
         "available_times": discover_time_directories(case_path),
         "warning": warning,
     }
+
+
+# ---------------------------------------------------------------------------
+# GET /cases/{name}/slice
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{name}/slice")
+async def get_slice(
+    name: str,
+    field: str = "p",
+    time: str = "latest",
+    axis: str = "x",
+    position: float = 0.0,
+):
+    """Compute a slice plane through the mesh."""
+    case_dir = os.path.join(FOAM_RUN, name)
+    if not os.path.isdir(case_dir):
+        raise HTTPException(404, f"Case not found: {name}")
+
+    try:
+        time_dir = resolve_time(case_dir, time)
+    except (FileNotFoundError, ValueError) as e:
+        raise HTTPException(404, str(e))
+
+    if axis.lower() not in ("x", "y", "z"):
+        raise HTTPException(400, f"Invalid axis: {axis}. Must be x, y, or z.")
+
+    try:
+        result = slice_field(case_dir, time_dir, field, axis, position)
+    except FileNotFoundError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    return result

@@ -13,7 +13,7 @@
 // ---------------------------------------------------------------------------
 
 /** Available scientific color map names. */
-export type ColorMapName = 'jet' | 'viridis' | 'coolwarm' | 'plasma' | 'inferno';
+export type ColorMapName = 'jet' | 'viridis' | 'coolwarm' | 'plasma' | 'inferno' | 'turbo';
 
 /** A single control point: position in [0,1] and its RGB color. */
 interface ControlPoint {
@@ -71,12 +71,21 @@ const INFERNO: ControlPoint[] = [
   { t: 1.00, r: 0.988, g: 0.998, b: 0.645 },
 ];
 
+const TURBO: ControlPoint[] = [
+  { t: 0.00, r: 0.19, g: 0.07, b: 0.23 },
+  { t: 0.25, r: 0.11, g: 0.57, b: 0.82 },
+  { t: 0.50, r: 0.21, g: 0.85, b: 0.42 },
+  { t: 0.75, r: 0.85, g: 0.90, b: 0.15 },
+  { t: 1.00, r: 0.66, g: 0.12, b: 0.11 },
+];
+
 const PALETTES: Record<ColorMapName, ControlPoint[]> = {
   jet: JET,
   viridis: VIRIDIS,
   coolwarm: COOLWARM,
   plasma: PLASMA,
   inferno: INFERNO,
+  turbo: TURBO,
 };
 
 const LABELS: Record<ColorMapName, string> = {
@@ -85,6 +94,7 @@ const LABELS: Record<ColorMapName, string> = {
   coolwarm: 'Cool-Warm (Diverging)',
   plasma: 'Plasma',
   inferno: 'Inferno',
+  turbo: 'Turbo (High Contrast)',
 };
 
 // ---------------------------------------------------------------------------

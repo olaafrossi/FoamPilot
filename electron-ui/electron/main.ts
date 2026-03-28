@@ -11,7 +11,7 @@ let updateManager: UpdateManager;
 // Load config from settings.json next to the executable (or project root in dev)
 function loadConfig(): { backendUrl: string; localCasesPath: string; paraViewPath: string; cores: number } {
   const defaults = {
-    backendUrl: "http://localhost:8000",
+    backendUrl: "http://127.0.0.1:8000",
     localCasesPath: path.join(path.dirname(app.getAppPath()), "..", "cases"),
     paraViewPath: "C:\\Program Files\\ParaView 6.0.1\\bin\\paraview.exe",
     cores: 10,
@@ -21,6 +21,10 @@ function loadConfig(): { backendUrl: string; localCasesPath: string; paraViewPat
     const settingsPath = path.join(app.getAppPath(), "..", "settings.json");
     if (fs.existsSync(settingsPath)) {
       const data = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
+      // Fix legacy localhost URLs (IPv6 breaks Docker on Windows)
+      if (data.backendUrl?.includes("localhost")) {
+        data.backendUrl = data.backendUrl.replace("localhost", "127.0.0.1");
+      }
       return { ...defaults, ...data };
     }
   } catch {}
@@ -168,12 +172,16 @@ ipcMain.handle("docker:health", async () => {
   return dockerManager.healthCheck();
 });
 
+ipcMain.handle("docker:diagnostics", async () => {
+  return dockerManager.runDiagnostics();
+});
+
 /** Fast single-shot health ping (no retries, 3s timeout) for status bar polling. */
 ipcMain.handle("docker:ping", async () => {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 3000);
-    const res = await fetch("http://localhost:8000/health", { signal: controller.signal });
+    const res = await fetch("http://127.0.0.1:8000/health", { signal: controller.signal });
     clearTimeout(timeout);
     return res.ok;
   } catch {
