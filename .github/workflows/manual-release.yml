@@ -1,0 +1,172 @@
+name: Manual Release (Test)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 0.1.0-test.1)'
+        required: true
+        default: '0.0.1-test'
+      platforms:
+        description: 'Platforms to build'
+        required: true
+        type: choice
+        options:
+          - all
+          - windows
+          - macos
+          - linux
+      draft:
+        description: 'Create as draft release'
+        required: true
+        type: boolean
+        default: true
+      skip_docker:
+        description: 'Skip Docker image build'
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  packages: write
+
+env:
+  NODE_VERSION: '22'
+  REGISTRY: ghcr.io
+  IMAGE_NAME: olaafrossi/foampilot
+
+jobs:
+  # ── Electron Build ─────────────────────────────────────────────────────
+  electron:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact: windows
+          - os: macos-latest
+            artifact: macos
+          - os: ubuntu-latest
+            artifact: linux
+    runs-on: ${{ matrix.os }}
+    if: >-
+      inputs.platforms == 'all' ||
+      (inputs.platforms == 'windows' && matrix.artifact == 'windows') ||
+      (inputs.platforms == 'macos'   && matrix.artifact == 'macos') ||
+      (inputs.platforms == 'linux'   && matrix.artifact == 'linux')
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: electron-ui/package-lock.json
+
+      - name: Install dependencies
+        working-directory: electron-ui
+        run: npm ci
+
+      - name: Stamp version in package.json
+        working-directory: electron-ui
+        shell: bash
+        run: npm version "${{ inputs.version }}" --no-git-tag-version --allow-same-version
+
+      - name: Build Electron app
+        working-directory: electron-ui
+        run: npm run build:electron
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: electron-${{ matrix.artifact }}
+          path: |
+            electron-ui/dist-electron/*.exe
+            electron-ui/dist-electron/*.dmg
+            electron-ui/dist-electron/*.AppImage
+            electron-ui/dist-electron/latest*.yml
+          if-no-files-found: warn
+
+  # ── Docker Build (optional) ────────────────────────────────────────────
+  docker:
+    runs-on: ubuntu-latest
+    if: inputs.skip_docker == false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version }}
+          labels: |
+            org.opencontainers.image.version=${{ inputs.version }}
+            org.opencontainers.image.source=https://github.com/olaafrossi/FoamPilot
+            org.opencontainers.image.description=FoamPilot OpenFOAM backend (test)
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ── Create Test Release ────────────────────────────────────────────────
+  release:
+    needs: [electron]
+    runs-on: ubuntu-latest
+    if: always() && needs.electron.result == 'success'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all Electron artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: ./all-artifacts
+
+      - name: Merge release files
+        shell: bash
+        run: |
+          mkdir -p ./releases
+          for dir in ./all-artifacts/electron-*/; do
+            [ -d "$dir" ] || continue
+            for file in "$dir"*; do
+              [ -f "$file" ] || continue
+              cp "$file" "./releases/$(basename "$file")"
+            done
+          done
+          echo "── Release artifacts ──"
+          ls -lh ./releases/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.version }}
+          name: "v${{ inputs.version }} (test release)"
+          files: ./releases/*
+          draft: ${{ inputs.draft }}
+          prerelease: true
+          body: |
+            ## Test Release v${{ inputs.version }}
+
+            **This is a manual test release for validating the Electron app and installer flow.**
+
+            Triggered by: @${{ github.actor }}
+            Branch: `${{ github.ref_name }}`
+            Platforms: `${{ inputs.platforms }}`
+            Docker: `${{ inputs.skip_docker == true && 'skipped' || 'included' }}`
