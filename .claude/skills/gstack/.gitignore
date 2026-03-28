@@ -1,0 +1,7 @@
+node_modules/
+browse/dist/
+design/dist/
+bin/gstack-global-discover
+.agents/
+bun.lock
+*.bun-build
