@@ -15,6 +15,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from services.config_generator import (
+    ensure_patches_in_bc_files,
     generate_block_mesh_dict,
     generate_decompose_par_dict,
     generate_snappy_hex_mesh_dict,
@@ -188,6 +189,9 @@ async def upload_geometry(
         if FOAM_CORES > 1:
             decompose_dict = generate_decompose_par_dict(FOAM_CORES)
             (system_dir / "decomposeParDict").write_text(decompose_dict, encoding="utf-8")
+
+        # Ensure all blockMesh patches have boundary condition entries
+        ensure_patches_in_bc_files(case_path / "0")
 
         return {
             "filename": file.filename,
