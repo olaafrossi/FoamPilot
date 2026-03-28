@@ -200,7 +200,7 @@ export class DockerManager {
   }
 
   /** Health check: poll the backend /health endpoint with retries. */
-  async healthCheck(url: string = "http://localhost:8000/health", timeoutMs: number = 30000): Promise<boolean> {
+  async healthCheck(url: string = "http://127.0.0.1:8000/health", timeoutMs: number = 30000): Promise<boolean> {
     const start = Date.now();
     let delay = 500;
 

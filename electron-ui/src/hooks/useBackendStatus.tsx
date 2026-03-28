@@ -9,7 +9,7 @@ async function devPing(): Promise<boolean> {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 3000);
-    const res = await fetch("http://localhost:8000/health", { signal: controller.signal });
+    const res = await fetch("http://127.0.0.1:8000/health", { signal: controller.signal });
     clearTimeout(timeout);
     return res.ok;
   } catch {

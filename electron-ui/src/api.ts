@@ -1,7 +1,7 @@
 import type { AppConfig, Template, JobResponse, MeshQuality, AeroResults, CaseInfo, FieldData, AeroSuggestions, GeometryClassification, YPlusResult, ReynoldsResult } from "./types";
 
 let config: AppConfig = {
-  backendUrl: "http://localhost:8000",
+  backendUrl: "http://127.0.0.1:8000",
   localCasesPath: "",
   paraViewPath: "",
   cores: 10,

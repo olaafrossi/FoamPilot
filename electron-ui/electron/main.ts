@@ -11,7 +11,7 @@ let updateManager: UpdateManager;
 // Load config from settings.json next to the executable (or project root in dev)
 function loadConfig(): { backendUrl: string; localCasesPath: string; paraViewPath: string; cores: number } {
   const defaults = {
-    backendUrl: "http://localhost:8000",
+    backendUrl: "http://127.0.0.1:8000",
     localCasesPath: path.join(path.dirname(app.getAppPath()), "..", "cases"),
     paraViewPath: "C:\\Program Files\\ParaView 6.0.1\\bin\\paraview.exe",
     cores: 10,
@@ -177,7 +177,7 @@ ipcMain.handle("docker:ping", async () => {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 3000);
-    const res = await fetch("http://localhost:8000/health", { signal: controller.signal });
+    const res = await fetch("http://127.0.0.1:8000/health", { signal: controller.signal });
     clearTimeout(timeout);
     return res.ok;
   } catch {
