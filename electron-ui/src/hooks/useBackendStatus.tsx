@@ -4,18 +4,29 @@ export type BackendState = "connected" | "disconnected" | "checking" | "restarti
 
 const POLL_INTERVAL = 10_000; // 10 seconds
 
+/** Fast single-shot health ping for dev mode (no Electron IPC). */
+async function devPing(): Promise<boolean> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch("http://localhost:8000/health", { signal: controller.signal });
+    clearTimeout(timeout);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export function useBackendStatus() {
   const [state, setState] = useState<BackendState>("checking");
   const intervalRef = useRef<ReturnType<typeof setInterval>>();
 
   const check = useCallback(async () => {
-    if (!window.foamPilot?.docker) {
-      // Not in Electron — assume connected (dev mode hits backend directly)
-      setState("connected");
-      return;
-    }
     try {
-      const healthy = await window.foamPilot.docker.healthCheck();
+      // Use fast ping IPC in Electron, direct fetch in dev mode
+      const healthy = window.foamPilot?.docker?.ping
+        ? await window.foamPilot.docker.ping()
+        : await devPing();
       setState(healthy ? "connected" : "disconnected");
     } catch {
       setState("disconnected");

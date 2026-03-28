@@ -201,6 +201,7 @@ declare global {
         stop: () => Promise<{ ok: boolean; error?: string }>;
         ensureSetup: () => Promise<{ ok: boolean; error?: string }>;
         healthCheck: () => Promise<boolean>;
+        ping: () => Promise<boolean>;
         onProgress: (cb: (msg: string) => void) => () => void;
         onStatusChange: (cb: (status: any) => void) => () => void;
       };
