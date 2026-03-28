@@ -2,11 +2,11 @@ import { describe, it, expect } from "vitest";
 import { getDefaultVisiblePatches } from "../../components/FieldMeshRenderer";
 
 describe("getDefaultVisiblePatches", () => {
-  it("shows patches ending with 'Group', lowerwall, and frontAndBack", () => {
+  it("shows patches ending with 'Group', lowerwall, and symmetryPlane", () => {
     const patches = [
       { name: "motorBikeGroup" },
       { name: "lowerwall" },
-      { name: "frontAndBack" },
+      { name: "symmetryPlane" },
       { name: "inlet" },
       { name: "outlet" },
       { name: "upperWall" },
@@ -16,7 +16,7 @@ describe("getDefaultVisiblePatches", () => {
 
     expect(vis.motorBikeGroup).toBe(true);
     expect(vis.lowerwall).toBe(true);
-    expect(vis.frontAndBack).toBe(true);
+    expect(vis.symmetryPlane).toBe(true);
     expect(vis.inlet).toBe(false);
     expect(vis.outlet).toBe(false);
     expect(vis.upperWall).toBe(false);
@@ -27,7 +27,7 @@ describe("getDefaultVisiblePatches", () => {
       { name: "myPartGroup" },
       { name: "anotherObjectGroup" },
       { name: "lowerwall" },
-      { name: "frontAndBack" },
+      { name: "symmetryPlane" },
       { name: "inlet" },
     ];
 
@@ -36,7 +36,7 @@ describe("getDefaultVisiblePatches", () => {
     expect(vis.myPartGroup).toBe(true);
     expect(vis.anotherObjectGroup).toBe(true);
     expect(vis.lowerwall).toBe(true);
-    expect(vis.frontAndBack).toBe(true);
+    expect(vis.symmetryPlane).toBe(true);
     expect(vis.inlet).toBe(false);
   });
 
@@ -73,11 +73,11 @@ describe("getDefaultVisiblePatches", () => {
     expect(vis["another_objectGroup"]).toBe(true);
   });
 
-  it("matches case-insensitively (lowerWall, FrontAndBack)", () => {
+  it("matches case-insensitively (lowerWall, SymmetryPlane)", () => {
     const patches = [
       { name: "motorBikeGroup" },
       { name: "lowerWall" },
-      { name: "FrontAndBack" },
+      { name: "SymmetryPlane" },
       { name: "inlet" },
     ];
 
@@ -85,7 +85,7 @@ describe("getDefaultVisiblePatches", () => {
 
     expect(vis.motorBikeGroup).toBe(true);
     expect(vis.lowerWall).toBe(true);
-    expect(vis.FrontAndBack).toBe(true);
+    expect(vis.SymmetryPlane).toBe(true);
     expect(vis.inlet).toBe(false);
   });
 });

@@ -250,11 +250,15 @@ def generate_block_mesh_dict(
 ) -> str:
     """Generate blockMeshDict string sized to the geometry bounding box.
 
+    All simulations use symmetric STL geometries (half-model), so the
+    domain is built for the positive-Y half only with a symmetryPlane
+    boundary at Y = 0.
+
     Domain sizing rules (ground_vehicle):
       - 5x geometry length upstream, 15x downstream (X direction)
-      - 4x geometry width on each side (Y direction)
+      - Y from 0 (symmetry plane) to 4x geometry width (Y direction)
       - Height from 0 to 8x geometry height (Z direction)
-      - Minimum domain of (-5, -4, 0) to (15, 4, 8)
+      - Minimum domain of (-5, 0, 0) to (15, 4, 8)
       - ~50 cells per characteristic length
 
     Domain sizing rules (freestream):
@@ -267,7 +271,9 @@ def generate_block_mesh_dict(
     # Domain extents
     x_min = min(bbox.min_x - 5.0 * bbox.size_x, -5.0)
     x_max = max(bbox.max_x + 15.0 * bbox.size_x, 15.0)
-    y_min = min(bbox.min_y - 4.0 * bbox.size_y, -4.0)
+
+    # Symmetric half-domain: Y=0 is the symmetry plane
+    y_min = 0.0
     y_max = max(bbox.max_y + 4.0 * bbox.size_y, 4.0)
 
     if domain_type == "freestream":
@@ -282,7 +288,7 @@ def generate_block_mesh_dict(
     # Cell counts: ~50 cells per characteristic length
     cells_per_unit = 50.0 / char_length
     nx = max(int(math.ceil((x_max - x_min) * cells_per_unit / 10)), 20)
-    ny = max(int(math.ceil((y_max - y_min) * cells_per_unit / 10)), 8)
+    ny = max(int(math.ceil((y_max - y_min) * cells_per_unit / 10)), 4)
     nz = max(int(math.ceil((z_max - z_min) * cells_per_unit / 10)), 8)
 
     def _fmt(v: float) -> str:
@@ -318,13 +324,20 @@ edges
 
 boundary
 (
-    frontAndBack
+    symmetryPlane
+    {{
+        type symmetryPlane;
+        faces
+        (
+            (0 4 5 1)
+        );
+    }}
+    side
     {{
         type patch;
         faces
         (
             (3 7 6 2)
-            (1 5 4 0)
         );
     }}
     inlet
@@ -381,9 +394,10 @@ def generate_snappy_hex_mesh_dict(
     emesh_name = f"{stem}.eMesh"
 
     # Refinement box: slightly larger than the geometry with wake region
+    # Y starts at 0 (symmetry plane) for symmetric half-domain
     rb_min_x = bbox.min_x - 1.0 * bbox.size_x
     rb_max_x = bbox.max_x + 3.0 * bbox.size_x
-    rb_min_y = bbox.min_y - 0.5 * bbox.size_y
+    rb_min_y = 0.0
     rb_max_y = bbox.max_y + 0.5 * bbox.size_y
     if domain_type == "freestream":
         rb_min_z = bbox.min_z - 0.5 * bbox.size_z
@@ -396,9 +410,9 @@ def generate_snappy_hex_mesh_dict(
             return "0.0"
         return f"{v:.4g}"
 
-    # locationInMesh: a point outside the geometry, near domain corner
+    # locationInMesh: a point outside the geometry, in the positive-Y half
     loc_x = bbox.max_x + 5.0 * bbox.size_x
-    loc_y = bbox.max_y + 3.0 * bbox.size_y
+    loc_y = max(bbox.max_y + 1.0 * bbox.size_y, 1.0)
     if domain_type == "freestream":
         loc_z = bbox.max_z + 3.0 * bbox.size_z
     else:
