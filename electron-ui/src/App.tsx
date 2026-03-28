@@ -440,6 +440,10 @@ export default function App() {
         const saved = localStorage.getItem("foampilot-config");
         if (saved) {
           const parsed = JSON.parse(saved);
+          // Fix legacy localhost URLs (IPv6 breaks Docker on Windows)
+          if (parsed.backendUrl?.includes("localhost")) {
+            parsed.backendUrl = parsed.backendUrl.replace("localhost", "127.0.0.1");
+          }
           Object.assign(defaults, parsed);
         }
       } catch { /* ignore parse errors */ }

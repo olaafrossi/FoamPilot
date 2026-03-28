@@ -21,6 +21,10 @@ function loadConfig(): { backendUrl: string; localCasesPath: string; paraViewPat
     const settingsPath = path.join(app.getAppPath(), "..", "settings.json");
     if (fs.existsSync(settingsPath)) {
       const data = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
+      // Fix legacy localhost URLs (IPv6 breaks Docker on Windows)
+      if (data.backendUrl?.includes("localhost")) {
+        data.backendUrl = data.backendUrl.replace("localhost", "127.0.0.1");
+      }
       return { ...defaults, ...data };
     }
   } catch {}
