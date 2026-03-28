@@ -19,7 +19,7 @@ async function devPing(): Promise<boolean> {
 
 export function useBackendStatus() {
   const [state, setState] = useState<BackendState>("checking");
-  const intervalRef = useRef<ReturnType<typeof setInterval>>();
+  const intervalRef = useRef<ReturnType<typeof setInterval>>(null);
 
   const check = useCallback(async () => {
     try {
@@ -47,7 +47,7 @@ export function useBackendStatus() {
   useEffect(() => {
     check();
     intervalRef.current = setInterval(check, POLL_INTERVAL);
-    return () => clearInterval(intervalRef.current);
+    return () => { if (intervalRef.current) clearInterval(intervalRef.current); };
   }, [check]);
 
   // Listen for status-change events from main process
