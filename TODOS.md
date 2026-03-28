@@ -2,6 +2,26 @@
 
 ## Deferred
 
+### Adaptive Particle Count Based on GPU Capability
+**What:** Auto-detect GPU performance and adjust particle count dynamically (2000 on integrated, 10000 on discrete).
+**Why:** The particle system is the highest-risk viz feature. Without adaptive count, it could freeze on low-end hardware or look sparse on high-end.
+**Pros:** Best experience on every machine. No manual tuning needed.
+**Cons:** GPU performance detection via WebGL renderer info is limited. Frame-time-based adaptation (halve if >20ms, double if <10ms) is more reliable but reactive.
+**Context:** Monitor requestAnimationFrame timing in the ParticleRenderer component. Start at 2000 particles. If frame time exceeds 20ms (50fps threshold), halve count. If consistently under 10ms, double up to 10000 max.
+**Effort:** S (CC: ~30 min) | **Priority:** P1
+**Depends on:** GPU particle system implementation.
+**Added:** 2026-03-28
+
+### WebGL Context Loss Recovery
+**What:** Listen for `webglcontextlost` event, show a recovery banner, reinitialize renderer on click.
+**Why:** WebGL context loss happens on any machine (GPU driver crash, memory pressure, sleep/wake). Without recovery, user sees a black canvas and must restart the app.
+**Pros:** Graceful recovery from a common failure mode.
+**Cons:** Reinitializing the Three.js scene means reloading field data (a few seconds).
+**Context:** Standard pattern: `canvas.addEventListener('webglcontextlost', handler)`. Show banner: "Graphics context lost. Click to reload visualization." React-three-fiber exposes the canvas ref for event binding.
+**Effort:** XS (CC: ~15 min) | **Priority:** P1
+**Depends on:** Nothing.
+**Added:** 2026-03-28
+
 ### Sample Geometry Files for New Templates
 **What:** Source or create freely-licensed STL geometry files for the raceCar, smallPlane, and fixedWingDrone templates.
 **Why:** Templates without geometry show "Bring your own STL" in the wizard. Adding sample geometry makes them fully runnable out of the box (click template, mesh, solve, visualize).
