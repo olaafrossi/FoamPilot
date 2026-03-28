@@ -122,23 +122,27 @@ class TestGenerateBlockMeshDict:
         assert "hex" in result
         assert "simpleGrading" in result
 
-        # Domain sizing: x_min = min(-1 - 5*2, -5) = -11
-        #                x_max = max(1 + 15*2, 15) = 31
-        #                y_min = min(-0.5 - 4*1, -4) = -4.5
-        #                y_max = max(0.5 + 4*1, 4) = 4.5
-        #                z_min = 0
-        #                z_max = max(8*0.5, 8) = 8
+        # Domain sizing (symmetric half-domain):
+        #   x_min = min(-1 - 5*2, -5) = -11
+        #   x_max = max(1 + 15*2, 15) = 31
+        #   y_min = 0 (symmetry plane)
+        #   y_max = max(0.5 + 4*1, 4) = 4.5
+        #   z_min = 0
+        #   z_max = max(8*0.5, 8) = 8
         assert "-11" in result
         assert "31" in result
-        assert "-4.5" in result
         assert "4.5" in result
 
-        # Boundary patches
+        # Boundary patches — symmetric layout
+        assert "symmetryPlane" in result
+        assert "type symmetryPlane;" in result
+        assert "side" in result
         assert "inlet" in result
         assert "outlet" in result
         assert "lowerWall" in result
         assert "upperWall" in result
-        assert "frontAndBack" in result
+        # frontAndBack is no longer used
+        assert "frontAndBack" not in result
 
     def test_generate_block_mesh_dict_small_geometry(self):
         """Geometry smaller than minimum domain, verify minimums enforced."""
@@ -151,27 +155,29 @@ class TestGenerateBlockMeshDict:
         # With very small geometry, domain should clamp to minimums:
         # x_min = min(0 - 5*0.1, -5) = min(-0.5, -5) = -5
         # x_max = max(0.1 + 15*0.1, 15) = max(1.6, 15) = 15
-        # y_min = min(0 - 4*0.1, -4) = min(-0.4, -4) = -4
+        # y_min = 0 (symmetry plane)
         # y_max = max(0.1 + 4*0.1, 4) = max(0.5, 4) = 4
         # z_max = max(8*0.1, 8) = max(0.8, 8) = 8
         assert "-5" in result
         assert "15" in result
-        assert "-4" in result
+        # y_min is always 0 for symmetric domain
+        assert "symmetryPlane" in result
         # z_max should be 8
         assert "8" in result
 
     def test_generate_block_mesh_dict_ground_vehicle(self):
-        """Ground vehicle domain: z_min=0, lowerWall is wall type."""
+        """Ground vehicle domain: z_min=0, lowerWall is wall type, Y=0 symmetry."""
         bbox = self._make_bbox(min_x=-1, min_y=-0.5, min_z=0, max_x=1, max_y=0.5, max_z=0.5)
         result = generate_block_mesh_dict(bbox, "car.stl", domain_type="ground_vehicle")
 
         # z_min should be 0 (ground plane)
-        # Vertices line: first z coordinate should be 0
         assert "lowerWall" in result
         assert 'type wall;' in result
+        # Y=0 symmetry plane
+        assert "type symmetryPlane;" in result
 
     def test_generate_block_mesh_dict_freestream(self):
-        """Freestream domain: symmetric z, lowerWall is patch (not wall)."""
+        """Freestream domain: symmetric z, lowerWall is patch (not wall), Y=0 symmetry."""
         bbox = self._make_bbox(min_x=-0.5, min_y=-0.3, min_z=-0.1, max_x=0.5, max_y=0.3, max_z=0.2)
         result = generate_block_mesh_dict(bbox, "plane.stl", domain_type="freestream")
 
@@ -179,9 +185,12 @@ class TestGenerateBlockMeshDict:
         assert "lowerWall" in result
         assert 'type patch;' in result.split("lowerWall")[1].split("}")[0]
 
-        # z_min should be negative (symmetric domain)
+        # z_min should be negative (symmetric domain in Z)
         # z_min = min(-0.1 - 4*0.3, -4) = min(-1.3, -4) = -4
         assert "-4" in result or "-1.3" in result
+
+        # Y=0 symmetry plane should still be present
+        assert "type symmetryPlane;" in result
 
 
 # ---------------------------------------------------------------------------
