@@ -50,6 +50,9 @@ interface FieldMeshRendererProps {
   patchVisibility?: Record<string, boolean>;
   rangeMin?: number;
   rangeMax?: number;
+  tubeScale?: number;
+  streamlineOffsetX?: number;
+  streamlineOffsetY?: number;
   onLoaded?: () => void;
   onError?: (error: string) => void;
 }
@@ -235,6 +238,9 @@ export default function FieldMeshRenderer({
   patchVisibility: externalVisibility,
   rangeMin: externalRangeMin,
   rangeMax: externalRangeMax,
+  tubeScale = 1,
+  streamlineOffsetX = 0,
+  streamlineOffsetY = 0,
   onLoaded,
   onError,
 }: FieldMeshRendererProps) {
@@ -339,6 +345,8 @@ export default function FieldMeshRenderer({
             seeds={streamlineSeeds}
             colormap={colormap}
             meshTransform={meshTransform}
+            tubeRadius={0.012 * tubeScale}
+            offset={[streamlineOffsetX, streamlineOffsetY, 0]}
           />
         )}
         <gridHelper args={[10, 10, "#333333", "#222222"]} rotation={[-Math.PI / 2, 0, 0]} />

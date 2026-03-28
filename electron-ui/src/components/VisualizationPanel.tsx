@@ -202,6 +202,9 @@ export default function VisualizationPanel({ caseName }: VisualizationPanelProps
   const [seedCount, setSeedCount] = useState(20);
   const [seedMode, setSeedMode] = useState<'uniform' | 'velocity'>('uniform');
   const [seedVisibleOnly, setSeedVisibleOnly] = useState(true);
+  const [tubeScale, setTubeScale] = useState(1);
+  const [streamlineOffsetX, setStreamlineOffsetX] = useState(0);
+  const [streamlineOffsetY, setStreamlineOffsetY] = useState(0);
   const [showPatchPanel, setShowPatchPanel] = useState(false);
 
   // Available options from the backend response
@@ -494,6 +497,63 @@ export default function VisualizationPanel({ caseName }: VisualizationPanelProps
               Visible patches only
             </span>
           </label>
+
+          {/* Tube scale */}
+          <div className="flex items-center gap-2">
+            <label style={{ fontSize: 11, color: "var(--fg-muted)", fontWeight: 600, textTransform: "uppercase" }}>
+              Tube Scale
+            </label>
+            <input
+              type="range"
+              min={0.1}
+              max={5}
+              step={0.1}
+              value={tubeScale}
+              onChange={(e) => setTubeScale(Number(e.target.value))}
+              style={{ width: 80, accentColor: "var(--accent)" }}
+            />
+            <span style={{ fontSize: 11, color: "var(--fg-muted)", minWidth: 28 }}>
+              {tubeScale.toFixed(1)}x
+            </span>
+          </div>
+
+          {/* X offset */}
+          <div className="flex items-center gap-2">
+            <label style={{ fontSize: 11, color: "var(--fg-muted)", fontWeight: 600, textTransform: "uppercase" }}>
+              X Offset
+            </label>
+            <input
+              type="range"
+              min={-2}
+              max={2}
+              step={0.05}
+              value={streamlineOffsetX}
+              onChange={(e) => setStreamlineOffsetX(Number(e.target.value))}
+              style={{ width: 80, accentColor: "var(--accent)" }}
+            />
+            <span style={{ fontSize: 11, color: "var(--fg-muted)", minWidth: 32 }}>
+              {streamlineOffsetX.toFixed(2)}
+            </span>
+          </div>
+
+          {/* Y offset */}
+          <div className="flex items-center gap-2">
+            <label style={{ fontSize: 11, color: "var(--fg-muted)", fontWeight: 600, textTransform: "uppercase" }}>
+              Y Offset
+            </label>
+            <input
+              type="range"
+              min={-2}
+              max={2}
+              step={0.05}
+              value={streamlineOffsetY}
+              onChange={(e) => setStreamlineOffsetY(Number(e.target.value))}
+              style={{ width: 80, accentColor: "var(--accent)" }}
+            />
+            <span style={{ fontSize: 11, color: "var(--fg-muted)", minWidth: 32 }}>
+              {streamlineOffsetY.toFixed(2)}
+            </span>
+          </div>
         </div>
       )}
 
@@ -555,6 +615,9 @@ export default function VisualizationPanel({ caseName }: VisualizationPanelProps
               patchVisibility={patchVisibility}
               rangeMin={rangeMin}
               rangeMax={rangeMax}
+              tubeScale={tubeScale}
+              streamlineOffsetX={streamlineOffsetX}
+              streamlineOffsetY={streamlineOffsetY}
             />
           )}
         </div>
