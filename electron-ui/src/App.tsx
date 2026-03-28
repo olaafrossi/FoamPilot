@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback } from "react";
 import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
-import { Rocket, FolderOpen, LayoutDashboard, Terminal, FileText, Settings, Upload } from "lucide-react";
+import { Rocket, FolderOpen, LayoutDashboard, Terminal, FileText, Settings, Upload, RotateCw } from "lucide-react";
 import { setConfig } from "./api";
 import type { AppConfig } from "./types";
 import { StatusProvider, useStatus } from "./hooks/useStatus";
+import { useBackendStatus } from "./hooks/useBackendStatus";
 import { formatElapsed } from "./hooks/useStopwatch";
 import WizardPage from "./pages/WizardPage";
 import MySimulationsPage from "./pages/MySimulationsPage";
@@ -65,6 +66,7 @@ function AppShell() {
   const navigate = useNavigate();
   const location = useLocation();
   const { status } = useStatus();
+  const { state: backendState, restart: restartBackend } = useBackendStatus();
   const [globalDragOver, setGlobalDragOver] = useState(false);
 
   const handleGlobalDragOver = useCallback((e: React.DragEvent) => {
@@ -299,6 +301,7 @@ function AppShell() {
           fontFamily: "var(--font-ui)",
         }}
       >
+        {/* Left: working status */}
         <span style={{ color: "var(--accent)" }} className={status.working ? "animate-pulse" : ""}>●</span>
         <span className="ml-[6px]">FoamPilot — {status.working ? "Working" : "Ready"}</span>
         {status.working && status.elapsed > 0 && (
@@ -306,6 +309,51 @@ function AppShell() {
             — {formatElapsed(status.elapsed)}
           </span>
         )}
+
+        {/* Right: backend connection status */}
+        <div className="ml-auto flex items-center gap-[8px]">
+          <span
+            style={{
+              color: backendState === "connected"
+                ? "#22c55e"
+                : backendState === "checking" || backendState === "restarting"
+                  ? "var(--accent)"
+                  : "#ef4444",
+            }}
+            className={backendState === "checking" || backendState === "restarting" ? "animate-pulse" : ""}
+          >
+            ●
+          </span>
+          <span>
+            Backend{" "}
+            {backendState === "connected"
+              ? "Connected"
+              : backendState === "checking"
+                ? "Checking..."
+                : backendState === "restarting"
+                  ? "Restarting..."
+                  : "Disconnected"}
+          </span>
+          {backendState === "disconnected" && (
+            <button
+              onClick={restartBackend}
+              title="Restart backend"
+              className="flex items-center justify-center transition-colors duration-100"
+              style={{
+                background: "transparent",
+                border: "none",
+                cursor: "pointer",
+                color: "var(--fg-muted)",
+                padding: 0,
+                lineHeight: 1,
+              }}
+              onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--fg)"; }}
+              onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--fg-muted)"; }}
+            >
+              <RotateCw size={12} />
+            </button>
+          )}
+        </div>
       </footer>
     </div>
   );
