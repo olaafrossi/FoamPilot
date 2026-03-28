@@ -35,6 +35,7 @@ interface StreamlineRendererProps {
   colormap: ColorMapName;
   meshTransform: MeshTransform;
   tubeRadius?: number;
+  offset?: [number, number, number];
 }
 
 // ---------------------------------------------------------------------------
@@ -203,6 +204,7 @@ export default function StreamlineRenderer({
   colormap,
   meshTransform,
   tubeRadius = 0.012,
+  offset = [0, 0, 0],
 }: StreamlineRendererProps) {
   const meshRef = useRef<THREE.Mesh>(null);
 
@@ -341,5 +343,5 @@ export default function StreamlineRenderer({
 
   if (!geometry) return null;
 
-  return <mesh ref={meshRef} geometry={geometry} material={material} />;
+  return <mesh ref={meshRef} geometry={geometry} material={material} position={offset} />;
 }
