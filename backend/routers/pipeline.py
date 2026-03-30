@@ -87,6 +87,13 @@ async def create_pipeline(req: PipelineCreateRequest):
                 status_code=404, detail=f"Template '{req.template}' not found or invalid"
             )
         shutil.copytree(str(tpl_case), case_path)
+        # OpenFOAM tutorials use .orig directories. Copy for wizard compatibility.
+        cp = Path(case_path)
+        for orig_name, target_name in [("0.orig", "0"), ("constant/polyMesh.orig", "constant/polyMesh")]:
+            orig = cp / orig_name
+            target = cp / target_name
+            if orig.is_dir() and not target.is_dir():
+                shutil.copytree(str(orig), str(target))
     elif not os.path.isdir(case_path):
         raise HTTPException(
             status_code=404,
@@ -237,82 +244,95 @@ async def reset_pipeline_step(case_name: str, step: str, req: PipelineResetReque
 # ── Templates with metadata ─────────────────────────────────────────
 
 
+# Solver-based category fallback when template.json omits category
+_LEARNING_SOLVERS = {"icoFoam"}
+
+# Stock OpenFOAM tutorials registered for the Setup Verification section.
+# Paths are relative to FOAM_TEMPLATES.
+REGISTERED_TUTORIALS = [
+    "tutorials/incompressible/simpleFoam/airFoil2D",
+    "tutorials/incompressible/simpleFoam/motorBike",
+]
+
+
+def _scan_single_template(
+    entry: Path, source: str, *, path_override: str | None = None
+) -> TemplateInfo | None:
+    """Scan a single directory for template.json and return TemplateInfo or None."""
+    if not entry.is_dir():
+        return None
+
+    meta_file = entry / "template.json"
+    meta: dict = {}
+    if meta_file.is_file():
+        try:
+            meta = json.loads(meta_file.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    if meta.get("hidden", False):
+        return None
+
+    case_dir = entry / "case" if (entry / "case").is_dir() else entry
+    if not (case_dir / "system").is_dir():
+        return None
+
+    raw_steps = meta.get("steps", {})
+    steps = {}
+    for step_key, step_data in raw_steps.items():
+        if isinstance(step_data, dict):
+            steps[step_key] = TemplateStepInfo(
+                title=step_data.get("title", ""),
+                description=step_data.get("description", ""),
+                files=step_data.get("files", []),
+                commands=step_data.get("commands", []),
+                tip=step_data.get("tip", ""),
+            )
+
+    physics = meta.get("physics", {})
+    domain_type = physics.get("domain_type", "")
+    solver = meta.get("solver", "")
+
+    tri_dir = case_dir / "constant" / "triSurface"
+    poly_dir = case_dir / "constant" / "polyMesh"
+    has_tri = tri_dir.is_dir() and any(tri_dir.iterdir()) if tri_dir.is_dir() else False
+    has_poly = poly_dir.is_dir() and any(poly_dir.iterdir()) if poly_dir.is_dir() else False
+    has_geometry = has_tri or has_poly
+
+    # Honor category from template.json; fallback to solver-based auto-detect
+    category = meta.get("category", "")
+    if not category:
+        category = "learning" if solver in _LEARNING_SOLVERS else "aero"
+
+    return TemplateInfo(
+        name=meta.get("name", entry.name),
+        path=path_override if path_override else entry.name,
+        description=meta.get("description", ""),
+        difficulty=meta.get("difficulty", ""),
+        solver=solver,
+        estimated_runtime=meta.get("estimated_runtime", ""),
+        learning_objectives=meta.get("learning_objectives", []),
+        fields=meta.get("fields", []),
+        steps=steps,
+        source=source,
+        domain_type=domain_type,
+        has_geometry=has_geometry,
+        category=category,
+    )
+
+
 def _scan_template_dir(tpl_dir: Path, source: str) -> list[TemplateInfo]:
     """Scan a directory for valid OpenFOAM templates and return metadata."""
     if not tpl_dir.is_dir():
         return []
 
-    # Templates whose solver is simpleFoam (external aero) vs learning cases
-    _LEARNING_SOLVERS = {"icoFoam"}
-
     templates = []
     for entry in sorted(tpl_dir.iterdir()):
         if not entry.is_dir():
             continue
-
-        # Check for template.json metadata
-        meta_file = entry / "template.json"
-        meta: dict = {}
-        if meta_file.is_file():
-            try:
-                meta = json.loads(meta_file.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
-                pass
-
-        # Skip hidden templates (still usable as scaffolds, just not listed)
-        if meta.get("hidden", False):
-            continue
-
-        # Check if it's a valid template (has case/system or system dir)
-        case_dir = entry / "case" if (entry / "case").is_dir() else entry
-        if not (case_dir / "system").is_dir():
-            continue
-
-        # Parse step metadata if present
-        raw_steps = meta.get("steps", {})
-        steps = {}
-        for step_key, step_data in raw_steps.items():
-            if isinstance(step_data, dict):
-                steps[step_key] = TemplateStepInfo(
-                    title=step_data.get("title", ""),
-                    description=step_data.get("description", ""),
-                    files=step_data.get("files", []),
-                    commands=step_data.get("commands", []),
-                    tip=step_data.get("tip", ""),
-                )
-
-        # Extract physics metadata
-        physics = meta.get("physics", {})
-        domain_type = physics.get("domain_type", "")
-        solver = meta.get("solver", "")
-
-        # Detect if sample geometry exists (triSurface for STL/OBJ, or polyMesh for pre-meshed cases)
-        tri_dir = case_dir / "constant" / "triSurface"
-        poly_dir = case_dir / "constant" / "polyMesh"
-        has_tri = tri_dir.is_dir() and any(tri_dir.iterdir()) if tri_dir.is_dir() else False
-        has_poly = poly_dir.is_dir() and any(poly_dir.iterdir()) if poly_dir.is_dir() else False
-        has_geometry = has_tri or has_poly
-
-        # Categorize: external aero vs learning
-        category = "learning" if solver in _LEARNING_SOLVERS else "aero"
-
-        templates.append(
-            TemplateInfo(
-                name=meta.get("name", entry.name),
-                path=entry.name,
-                description=meta.get("description", ""),
-                difficulty=meta.get("difficulty", ""),
-                solver=solver,
-                estimated_runtime=meta.get("estimated_runtime", ""),
-                learning_objectives=meta.get("learning_objectives", []),
-                fields=meta.get("fields", []),
-                steps=steps,
-                source=source,
-                domain_type=domain_type,
-                has_geometry=has_geometry,
-                category=category,
-            )
-        )
+        info = _scan_single_template(entry, source)
+        if info is not None:
+            templates.append(info)
 
     return templates
 
@@ -321,10 +341,17 @@ def _scan_template_dir(tpl_dir: Path, source: str) -> list[TemplateInfo]:
 async def list_templates_with_metadata():
     """List available templates with metadata from template.json files.
 
-    Scans both the built-in templates directory (FOAM_TEMPLATES) and the
-    user templates directory (FOAM_USER_TEMPLATES) if configured.
+    Scans top-level templates, registered tutorials, and user templates.
     """
-    templates = _scan_template_dir(Path(FOAM_TEMPLATES), "builtin")
+    tpl_root = Path(FOAM_TEMPLATES)
+    templates = _scan_template_dir(tpl_root, "builtin")
+
+    # Scan registered tutorials (nested paths not found by top-level scan)
+    for rel_path in REGISTERED_TUTORIALS:
+        tp = tpl_root / rel_path
+        info = _scan_single_template(tp, "builtin", path_override=rel_path)
+        if info is not None:
+            templates.append(info)
 
     if FOAM_USER_TEMPLATES:
         user_dir = Path(FOAM_USER_TEMPLATES)

@@ -61,13 +61,16 @@ export default function MeshStep({
   const stopwatch = useStopwatch();
   const { setWorking, setElapsed } = useStatus();
 
-  // Pre-meshed detection: case already has constant/polyMesh
+  // Pre-meshed detection: check for polyMesh boundary (or .gz / polyMesh.orig fallback)
   const [preMeshed, setPreMeshed] = useState(false);
 
   useEffect(() => {
     if (!caseName) return;
     let cancelled = false;
+    // Try boundary, then boundary.gz (compressed by decomposePar), then polyMesh.orig
     readFile(caseName, "constant/polyMesh/boundary")
+      .catch(() => readFile(caseName, "constant/polyMesh/boundary.gz"))
+      .catch(() => readFile(caseName, "constant/polyMesh.orig/boundary"))
       .then(() => { if (!cancelled) setPreMeshed(true); })
       .catch(() => { if (!cancelled) setPreMeshed(false); });
     return () => { cancelled = true; };
@@ -216,6 +219,7 @@ export default function MeshStep({
       "bash -c 'cat > system/decomposeParDict << ENDOFDICT\nFoamFile { version 2.0; format ascii; class dictionary; object decomposeParDict; }\nnumberOfSubdomains " +
         cores +
         ";\nmethod scotch;\nENDOFDICT'",
+      "bash -c 'gunzip -k constant/triSurface/*.gz 2>/dev/null; true'",
       "surfaceFeatureExtract",
       "blockMesh",
       "decomposePar -force",
@@ -290,7 +294,11 @@ export default function MeshStep({
     stopwatch.start();
 
     try {
-      const job = await runCommands(caseName, ["checkMesh"]);
+      const job = await runCommands(caseName, [
+        // Restore mesh from polyMesh.orig or decompress .gz files if needed
+        "bash -c 'if [ ! -f constant/polyMesh/points ]; then if [ -d constant/polyMesh.orig ]; then rm -rf constant/polyMesh && cp -r constant/polyMesh.orig constant/polyMesh; elif [ -f constant/polyMesh/points.gz ]; then gunzip constant/polyMesh/*.gz; fi; fi'",
+        "checkMesh",
+      ]);
       setCurrentJobId(job.job_id);
       const ws = connectLogs(job.job_id, (line) => {
         setLogLines((prev) => [...prev, line]);
@@ -629,8 +637,8 @@ export default function MeshStep({
               Mesh quality OK
             </div>
           )}
-          {/* 3D Mesh Preview */}
-          {meshDone && caseName && (
+          {/* 3D Mesh Preview (only for cases with imported geometry, not pre-meshed tutorials) */}
+          {meshDone && caseName && !preMeshed && (
             <div className="mt-4">
               <h4 style={{ fontSize: 13, fontWeight: 600, color: "var(--fg)", marginBottom: 8 }}>Geometry Preview</h4>
               <MeshPreview caseName={caseName} />

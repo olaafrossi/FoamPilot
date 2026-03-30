@@ -433,7 +433,9 @@ export default function App() {
         backendUrl: "http://127.0.0.1:8000",
         localCasesPath: "C:\\Dev\\FoamPilot\\cases",
         paraViewPath: "C:\\Program Files\\ParaView 6.0.1\\bin\\paraview.exe",
-        cores: 10,
+        cores: 4,
+        dockerCpus: 4,
+        dockerMemory: 8,
       };
       // Load saved settings from localStorage
       try {

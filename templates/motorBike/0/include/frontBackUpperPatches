@@ -11,7 +11,7 @@ upperWall
     type slip;
 }
 
-left
+frontAndBack
 {
     type slip;
 }

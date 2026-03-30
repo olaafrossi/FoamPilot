@@ -4,7 +4,9 @@ let config: AppConfig = {
   backendUrl: "http://127.0.0.1:8000",
   localCasesPath: "",
   paraViewPath: "",
-  cores: 10,
+  cores: 4,
+  dockerCpus: 4,
+  dockerMemory: 8,
 };
 
 export function setConfig(c: AppConfig) { config = c; }
@@ -162,7 +164,10 @@ export async function getFieldData(
   const res = await fetch(
     api(`/cases/${caseName}/field-data?field=${encodeURIComponent(field)}&time=${encodeURIComponent(time)}`),
   );
-  if (!res.ok) throw new Error(`Failed to get field data: ${res.statusText}`);
+  if (!res.ok) {
+    const detail = await res.json().then(j => j.detail).catch(() => res.statusText);
+    throw new Error(`Failed to get field data: ${detail}`);
+  }
   return res.json();
 }
 

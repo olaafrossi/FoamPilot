@@ -1,0 +1,42 @@
+{
+    "name": "2D Airfoil (Tutorial)",
+    "description": "Stock OpenFOAM tutorial: 2D NACA airfoil at 8° angle of attack. Pre-meshed C-grid (~10k cells), Spalart-Allmaras turbulence model. Run this first to verify your setup is working.",
+    "difficulty": "beginner",
+    "solver": "simpleFoam",
+    "category": "verification",
+    "estimated_runtime": "1-3 minutes",
+    "fields": ["U", "p", "nuTilda", "nut"],
+    "has_geometry": false,
+    "steps": {
+        "mesh": {
+            "title": "Pre-Meshed Case",
+            "description": "This case comes with a pre-generated C-grid mesh. No meshing commands needed — the mesh is already in constant/polyMesh.",
+            "files": [],
+            "commands": [],
+            "tip": "The mesh uses ~10,000 cells arranged in a C-topology around the airfoil. You can inspect it in system/blockMeshDict."
+        },
+        "boundaries": {
+            "title": "Boundary Conditions",
+            "description": "Inlet velocity at 26 m/s (8° angle of attack), zero-gradient outlet, slip walls.",
+            "files": ["0/U", "0/p", "0/nuTilda", "0/nut"],
+            "tip": "The inlet velocity is decomposed into (25.75, 3.62, 0) m/s to achieve 8° AoA."
+        },
+        "solver": {
+            "title": "Solver Settings",
+            "description": "SIMPLE algorithm with Spalart-Allmaras turbulence model. 500 iterations.",
+            "files": ["system/controlDict", "system/fvSchemes", "system/fvSolution"],
+            "tip": "Watch for residuals dropping below 1e-4 — that indicates convergence."
+        },
+        "run": {
+            "title": "Run Simulation",
+            "description": "Execute simpleFoam. This pre-meshed case typically converges in 1-3 minutes.",
+            "commands": ["simpleFoam"],
+            "tip": "If this completes successfully, your Docker and OpenFOAM setup is working correctly."
+        },
+        "postprocess": {
+            "title": "View Results",
+            "description": "Visualize pressure coefficient (Cp) distribution and velocity field around the airfoil.",
+            "tip": "In ParaView, use 'Plot Over Line' along the airfoil surface to see the Cp distribution."
+        }
+    }
+}

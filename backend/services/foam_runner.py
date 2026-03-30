@@ -117,11 +117,75 @@ async def _read_stream(
         job._push({"line": line, "stream": stream_name})
 
 
+def _prepare_case(case_path: str) -> None:
+    """Ensure case directory is ready for OpenFOAM commands.
+
+    - Restore triSurface/ from template if missing
+    - Decompress .gz geometry files in constant/triSurface/
+    - Restore polyMesh from .orig or decompress .gz mesh files
+    """
+    import gzip as _gzip
+    import json
+    import shutil
+    from pathlib import Path
+
+    cp = Path(case_path)
+
+    # Restore triSurface/ from template if missing (Allclean may have removed it)
+    tri_dir = cp / "constant" / "triSurface"
+    if not tri_dir.is_dir():
+        # Find which template this case came from
+        meta_file = cp / "template.json"
+        if meta_file.is_file():
+            try:
+                meta = json.loads(meta_file.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                meta = {}
+            # Look up the template's triSurface
+            tpl_root = Path(FOAM_TEMPLATES)
+            # Try case name, then scan for matching template
+            for candidate in [cp.name, meta.get("_template", "")]:
+                if not candidate:
+                    continue
+                src_tri = tpl_root / candidate / "constant" / "triSurface"
+                if src_tri.is_dir():
+                    shutil.copytree(str(src_tri), str(tri_dir))
+                    break
+
+    # Decompress geometry files
+    if tri_dir.is_dir():
+        for gz in tri_dir.glob("*.gz"):
+            out = gz.with_suffix("")
+            if not out.exists():
+                with _gzip.open(gz, "rb") as f_in:
+                    out.write_bytes(f_in.read())
+
+    # Restore polyMesh if missing (decomposePar may have destroyed it)
+    poly = cp / "constant" / "polyMesh"
+    points = poly / "points"
+    if poly.is_dir() and not points.exists():
+        orig = cp / "constant" / "polyMesh.orig"
+        if orig.is_dir():
+            shutil.rmtree(str(poly))
+            shutil.copytree(str(orig), str(poly))
+        else:
+            points_gz = poly / "points.gz"
+            if points_gz.exists():
+                for gz in poly.glob("*.gz"):
+                    out = gz.with_suffix("")
+                    if not out.exists():
+                        with _gzip.open(gz, "rb") as f_in:
+                            out.write_bytes(f_in.read())
+
+
 async def _run_job(job: Job) -> None:
     """Execute the command chain for a job."""
     case_path = case_dir(job.case_name)
     job.status = JobStatusEnum.running
     job.start_time = datetime.now(timezone.utc)
+
+    # Prepare case before running commands
+    _prepare_case(case_path)
 
     try:
         for cmd in job.commands:

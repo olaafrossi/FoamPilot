@@ -3,6 +3,13 @@ export interface AppConfig {
   localCasesPath: string;
   paraViewPath: string;
   cores: number;
+  dockerCpus: number;
+  dockerMemory: number;  // GB
+}
+
+export interface SystemResources {
+  cpus: number;
+  memoryGB: number;
 }
 
 export interface Template {
@@ -16,6 +23,7 @@ export interface Template {
   domain_type?: string;
   has_geometry?: boolean;
   category?: string;
+  estimated_runtime?: string;
 }
 
 export interface TemplateStep {
@@ -198,11 +206,17 @@ declare global {
   interface Window {
     foamPilot: {
       getConfig: () => Promise<AppConfig>;
+      saveConfig: (config: AppConfig) => Promise<{ ok: boolean; error?: string }>;
       openParaView: (casePath: string) => Promise<{ ok: boolean; error?: string }>;
       openFolder: (folderPath: string) => Promise<void>;
       selectFile: (filters: { name: string; extensions: string[] }[]) => Promise<string | null>;
       readFile: (filePath: string) => Promise<ArrayBuffer>;
       showNotification: (title: string, body: string) => Promise<boolean>;
+
+      tutorials: {
+        getStatus: () => Promise<Record<string, unknown>>;
+        setCompleted: (key: string) => Promise<boolean>;
+      };
 
       docker: {
         getStatus: () => Promise<DockerFullStatus>;
@@ -213,6 +227,8 @@ declare global {
         healthCheck: () => Promise<boolean>;
         ping: () => Promise<boolean>;
         diagnostics: () => Promise<DiagnosticResult>;
+        getSystemResources: () => Promise<SystemResources>;
+        updateResources: (config: AppConfig) => Promise<{ ok: boolean; healthy?: boolean; error?: string }>;
         onProgress: (cb: (msg: string) => void) => () => void;
         onStatusChange: (cb: (status: any) => void) => () => void;
       };
