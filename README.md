@@ -274,46 +274,55 @@ Environment variables in `docker/.env`:
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────┐
-│                  Electron Desktop App                │
-│  ┌───────────┐  ┌──────────────┐  ┌──────────────┐ │
-│  │ Activity   │  │   Wizard     │  │  3D Viewer   │ │
-│  │ Bar        │  │  (6 steps)   │  │  (Three.js)  │ │
-│  │            │  │              │  │              │ │
-│  │ ● Wizard   │  │ Geometry ──► │  │ Fields       │ │
-│  │ ● Sims     │  │ Mesh ──────► │  │ Streamlines  │ │
-│  │ ● Settings │  │ Physics ───► │  │ Slice Planes │ │
-│  │            │  │ Solver ────► │  │ Particles    │ │
-│  │            │  │ Run ───────► │  │              │ │
-│  │            │  │ Results ───► │  │              │ │
-│  └───────────┘  └──────┬───────┘  └──────────────┘ │
-│                        │ HTTP + WebSocket            │
-└────────────────────────┼────────────────────────────┘
-                         │
-              ┌──────────▼──────────┐
-              │   FastAPI Backend    │
-              │   (Python 3.11)     │
-              │                     │
-              │ ● Case management   │
-              │ ● Aero suggestions  │
-              │ ● Config generation │
-              │ ● Job runner        │
-              │ ● Field parsing     │
-              │ ● Log streaming     │
-              └──────────┬──────────┘
-                         │
-              ┌──────────▼──────────┐
-              │   Docker Container   │
-              │   Ubuntu 24.04      │
-              │                     │
-              │ ● OpenFOAM v2512    │
-              │ ● blockMesh         │
-              │ ● snappyHexMesh     │
-              │ ● simpleFoam        │
-              │ ● checkMesh         │
-              │ ● decomposePar      │
-              └─────────────────────┘
+```mermaid
+graph TD
+    subgraph Electron["Electron Desktop App"]
+        direction LR
+        ActivityBar["Activity Bar\n―――\n● Wizard\n● Sims\n● Settings"]
+        subgraph Wizard["Guided Wizard — 6 Steps"]
+            G[Geometry] --> M[Mesh]
+            M --> Ph[Physics]
+            Ph --> So[Solver]
+            So --> R[Run]
+            R --> Re[Results]
+        end
+        subgraph Viewer["3D Viewer — Three.js"]
+            Fields[Field Coloring]
+            Streamlines[Streamlines]
+            Slices[Slice Planes]
+            Particles[Particles]
+        end
+        ActivityBar ~~~ Wizard
+        Wizard ~~~ Viewer
+    end
+
+    Electron -- "HTTP + WebSocket" --> Backend
+
+    subgraph Backend["FastAPI Backend — Python 3.11"]
+        CaseMgmt[Case Management]
+        AeroSuggest[Aero Suggestions]
+        ConfigGen[Config Generation]
+        JobRunner[Job Runner]
+        FieldParse[Field Parsing]
+        LogStream[Log Streaming]
+    end
+
+    Backend -- "subprocess" --> Docker
+
+    subgraph Docker["Docker Container — Ubuntu 24.04"]
+        OF[OpenFOAM v2512]
+        blockMesh[blockMesh]
+        snappy[snappyHexMesh]
+        simple[simpleFoam]
+        checkMesh[checkMesh]
+        decompose[decomposePar]
+    end
+
+    style Electron fill:#18181B,stroke:#F59E0B,color:#FAFAFA
+    style Backend fill:#18181B,stroke:#22C55E,color:#FAFAFA
+    style Docker fill:#18181B,stroke:#61DAFB,color:#FAFAFA
+    style Wizard fill:#09090B,stroke:#3F3F46,color:#FAFAFA
+    style Viewer fill:#09090B,stroke:#3F3F46,color:#FAFAFA
 ```
 
 ### Tech Stack
