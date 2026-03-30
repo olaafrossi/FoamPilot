@@ -1,0 +1,42 @@
+{
+    "name": "Motorbike (Tutorial)",
+    "description": "Stock OpenFOAM tutorial: external aerodynamics of a motorcycle using snappyHexMesh. Full meshing + solve pipeline. A thorough setup verification for complex geometry cases.",
+    "difficulty": "intermediate",
+    "solver": "simpleFoam",
+    "category": "verification",
+    "estimated_runtime": "5-15 min (serial), 2-5 min (6 cores)",
+    "fields": ["U", "p", "k", "omega", "nut"],
+    "has_geometry": true,
+    "steps": {
+        "mesh": {
+            "title": "Generate Mesh",
+            "description": "Three-step meshing: surfaceFeatureExtract, blockMesh, then snappyHexMesh. The motorcycle geometry is in constant/triSurface/.",
+            "files": ["system/blockMeshDict", "system/snappyHexMeshDict", "system/surfaceFeatureExtractDict"],
+            "commands": ["surfaceFeatureExtract", "blockMesh", "snappyHexMesh -overwrite"],
+            "tip": "snappyHexMesh reads the motorcycle geometry from constant/triSurface/motorBike.obj.gz."
+        },
+        "boundaries": {
+            "title": "Boundary Conditions",
+            "description": "Inlet at 20 m/s, outlet at zero-gradient, k-omega SST turbulence model.",
+            "files": ["0/U", "0/p", "0/k", "0/omega", "0/nut"],
+            "tip": "The inlet uses fixedValue for U (20 m/s in X direction) and calculated for turbulence fields."
+        },
+        "solver": {
+            "title": "Solver Settings",
+            "description": "SIMPLE algorithm with k-omega SST turbulence. 500 iterations.",
+            "files": ["system/controlDict", "system/fvSchemes", "system/fvSolution"],
+            "tip": "For a quick test, reduce endTime to 100 iterations."
+        },
+        "run": {
+            "title": "Run Simulation",
+            "description": "Execute simpleFoam. This case takes longer than the 2D airfoil due to the 3D mesh.",
+            "commands": ["simpleFoam"],
+            "tip": "If this completes, your setup handles complex geometry, meshing, and parallel solving."
+        },
+        "postprocess": {
+            "title": "View Results",
+            "description": "Visualize pressure distribution, velocity field, and force coefficients on the motorcycle.",
+            "tip": "In ParaView, apply 'Extract Block' to isolate the motorcycle surfaces, then color by pressure."
+        }
+    }
+}

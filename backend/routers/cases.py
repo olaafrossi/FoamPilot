@@ -60,6 +60,15 @@ async def create_case(req: CaseCreateRequest):
         raise HTTPException(status_code=400, detail="Invalid template path")
 
     shutil.copytree(str(src), dest)
+
+    # OpenFOAM tutorials use .orig directories. Copy so the wizard can work with them.
+    dest_path = Path(dest)
+    for orig_name, target_name in [("0.orig", "0"), ("constant/polyMesh.orig", "constant/polyMesh")]:
+        orig = dest_path / orig_name
+        target = dest_path / target_name
+        if orig.is_dir() and not target.is_dir():
+            shutil.copytree(str(orig), str(target))
+
     return _case_info(req.name, dest)
 
 

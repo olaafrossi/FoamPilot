@@ -9,6 +9,12 @@ contextBridge.exposeInMainWorld("foamPilot", {
   readFile: (filePath: string) => ipcRenderer.invoke("read-file", filePath),
   showNotification: (title: string, body: string) => ipcRenderer.invoke("show-notification", title, body),
 
+  // Tutorial status
+  tutorials: {
+    getStatus: () => ipcRenderer.invoke("tutorial:get-status"),
+    setCompleted: (key: string) => ipcRenderer.invoke("tutorial:set-completed", key),
+  },
+
   // Docker management
   docker: {
     getStatus: () => ipcRenderer.invoke("docker:status"),

@@ -10,7 +10,9 @@ export default defineConfig({
   test: {
     include: [
       'src/**/__tests__/**/*.test.ts',
+      'src/**/__tests__/**/*.test.tsx',
       'electron/**/__tests__/**/*.test.ts',
     ],
+    setupFiles: ['src/test-setup.ts'],
   },
 });

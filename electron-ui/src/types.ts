@@ -16,6 +16,7 @@ export interface Template {
   domain_type?: string;
   has_geometry?: boolean;
   category?: string;
+  estimated_runtime?: string;
 }
 
 export interface TemplateStep {
@@ -203,6 +204,11 @@ declare global {
       selectFile: (filters: { name: string; extensions: string[] }[]) => Promise<string | null>;
       readFile: (filePath: string) => Promise<ArrayBuffer>;
       showNotification: (title: string, body: string) => Promise<boolean>;
+
+      tutorials: {
+        getStatus: () => Promise<Record<string, unknown>>;
+        setCompleted: (key: string) => Promise<boolean>;
+      };
 
       docker: {
         getStatus: () => Promise<DockerFullStatus>;

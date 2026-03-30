@@ -111,6 +111,40 @@ ipcMain.handle("show-notification", async (_, title: string, body: string) => {
   return false;
 });
 
+// ── Tutorial status IPC handlers ──────────────────────────────────────
+
+function tutorialsJsonPath(): string {
+  const config = loadConfig();
+  return path.join(config.localCasesPath, ".foampilot", "tutorials.json");
+}
+
+function readTutorialsJson(): Record<string, unknown> {
+  const fp = tutorialsJsonPath();
+  if (!fs.existsSync(fp)) return {};
+  try {
+    return JSON.parse(fs.readFileSync(fp, "utf-8"));
+  } catch {
+    return {};
+  }
+}
+
+function writeTutorialsJson(data: Record<string, unknown>): void {
+  const fp = tutorialsJsonPath();
+  const dir = path.dirname(fp);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(fp, JSON.stringify(data, null, 2));
+}
+
+ipcMain.handle("tutorial:get-status", () => readTutorialsJson());
+
+ipcMain.handle("tutorial:set-completed", (_, key: string) => {
+  const data = readTutorialsJson();
+  data[key] = true;
+  if (!data.onboarding_completed) data.onboarding_completed = true;
+  writeTutorialsJson(data);
+  return true;
+});
+
 // ── Docker IPC handlers ───────────────────────────────────────────────
 
 ipcMain.handle("docker:status", async () => {
