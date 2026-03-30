@@ -45,8 +45,6 @@ async def list_cases():
 async def create_case(req: CaseCreateRequest):
     """Create a new case by copying a template."""
     dest = validate_case_path(req.name)
-    if os.path.exists(dest):
-        raise HTTPException(status_code=409, detail=f"Case '{req.name}' already exists")
 
     tpl_dir = Path(FOAM_TEMPLATES)
     src = tpl_dir / req.template
@@ -59,6 +57,10 @@ async def create_case(req: CaseCreateRequest):
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid template path")
 
+    # Remove existing case and recreate from fresh template
+    if os.path.exists(dest):
+        shutil.rmtree(dest)
+
     shutil.copytree(str(src), dest)
 
     # OpenFOAM tutorials use .orig directories. Copy so the wizard can work with them.
@@ -68,6 +70,16 @@ async def create_case(req: CaseCreateRequest):
         target = dest_path / target_name
         if orig.is_dir() and not target.is_dir():
             shutil.copytree(str(orig), str(target))
+
+    # Decompress any .gz geometry files in triSurface/ so OpenFOAM tools can find them
+    import gzip as _gzip
+    tri_dir = dest_path / "constant" / "triSurface"
+    if tri_dir.is_dir():
+        for gz_file in tri_dir.glob("*.gz"):
+            out_file = gz_file.with_suffix("")  # strip .gz
+            if not out_file.exists():
+                with _gzip.open(gz_file, "rb") as f_in:
+                    out_file.write_bytes(f_in.read())
 
     return _case_info(req.name, dest)
 

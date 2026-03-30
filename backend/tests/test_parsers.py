@@ -58,7 +58,7 @@ class TestParseCheckMeshEmpty:
         """Empty string yields defaults."""
         result = parse_check_mesh("")
 
-        assert result.ok is False  # no "Mesh OK." found
+        assert result.ok is True  # no errors found
         assert result.cells == 0
         assert result.faces == 0
         assert result.points == 0

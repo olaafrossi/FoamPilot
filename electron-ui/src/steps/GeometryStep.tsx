@@ -59,7 +59,7 @@ export default function GeometryStep({
     setError(null);
 
     Promise.all([
-      window.foamPilot.tutorials.getStatus().catch(() => ({} as Record<string, unknown>)),
+      window.foamPilot?.tutorials?.getStatus()?.catch(() => ({} as Record<string, unknown>)) ?? Promise.resolve({} as Record<string, unknown>),
       fetchTemplates(),
     ])
       .then(([status, tpls]) => {

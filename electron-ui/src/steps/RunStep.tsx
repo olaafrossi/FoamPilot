@@ -197,9 +197,15 @@ export default function RunStep({
     const cores = getConfig().cores;
 
     const commands = [
+      // Restore mesh if decomposePar compressed it on a previous run
+      "bash -c 'if [ ! -f constant/polyMesh/points ]; then if [ -d constant/polyMesh.orig ]; then rm -rf constant/polyMesh && cp -r constant/polyMesh.orig constant/polyMesh; elif [ -f constant/polyMesh/points.gz ]; then gunzip constant/polyMesh/*.gz; fi; fi'",
+      "bash -c 'cat > system/decomposeParDict << ENDOFDICT\nFoamFile { version 2.0; format ascii; class dictionary; object decomposeParDict; }\nnumberOfSubdomains " +
+        cores +
+        ";\nmethod scotch;\nENDOFDICT'",
       "decomposePar -force",
       "mpirun -np " + cores + " --oversubscribe simpleFoam -parallel",
       "reconstructPar",
+      "reconstructParMesh -constant",
     ];
 
     try {

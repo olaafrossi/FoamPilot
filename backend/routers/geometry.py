@@ -460,6 +460,11 @@ async def field_data(name: str, field: str = "p", time: str = "latest"):
         data = extract_boundary_field_data(case_path, resolved_time, field)
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail=f"{type(exc).__name__}: {exc}",
+        )
 
     # Check for active jobs on this case
     warning = None

@@ -53,7 +53,11 @@ def parse_check_mesh(output: str) -> MeshQuality:
         result.points = int(m.group(1))
 
     # Quality metrics
-    m = re.search(r"Max non-orthogonality\s*=\s*([\d.eE+-]+)", output, re.IGNORECASE)
+    # Real OpenFOAM: "Mesh non-orthogonality Max: 41.6237 average: 7.52805"
+    m = re.search(r"non-orthogonality\s+Max:\s*([\d.eE+-]+)", output, re.IGNORECASE)
+    if not m:
+        # Fallback: older format "Max non-orthogonality = 65.2"
+        m = re.search(r"Max non-orthogonality\s*=\s*([\d.eE+-]+)", output, re.IGNORECASE)
     if m:
         result.max_non_orthogonality = float(m.group(1))
 
@@ -66,15 +70,20 @@ def parse_check_mesh(output: str) -> MeshQuality:
         result.max_aspect_ratio = float(m.group(1))
 
     # Overall mesh status
-    if "Mesh OK." in output:
+    # Collect error lines: checkMesh prefixes failures with "***"
+    # Filter out benign warnings that don't affect simulation quality
+    _BENIGN_WARNINGS = {"upper triangular order"}
+    for line in output.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("***"):
+            msg = stripped.lstrip("* ")
+            if not any(w in msg.lower() for w in _BENIGN_WARNINGS):
+                result.errors.append(msg)
+
+    if "Mesh OK." in output or not result.errors:
         result.ok = True
     else:
         result.ok = False
-        # Collect error lines: checkMesh prefixes failures with "***"
-        for line in output.splitlines():
-            stripped = line.strip()
-            if stripped.startswith("***"):
-                result.errors.append(stripped.lstrip("* "))
 
     return result
 
