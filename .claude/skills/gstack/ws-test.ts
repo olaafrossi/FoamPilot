@@ -1,0 +1,12 @@
+import { createRequire } from 'module';
+const req = createRequire(import.meta.url);
+const bundle = req('./node_modules/playwright-core/lib/utilsBundleImpl/index.js');
+const WS = bundle.ws;
+console.log('ws type:', typeof WS);
+const r = await fetch('http://127.0.0.1:9235/json/version');
+const data = await r.json() as any;
+console.log('wsUrl:', data.webSocketDebuggerUrl.substring(0, 50));
+const socket = new WS(data.webSocketDebuggerUrl);
+(socket as any).on('open', () => { console.log('ws opened!'); (socket as any).close(); process.exit(0); });
+(socket as any).on('error', (e: any) => { console.log('ws error:', e.message); process.exit(1); });
+await new Promise(r => setTimeout(r, 5000));

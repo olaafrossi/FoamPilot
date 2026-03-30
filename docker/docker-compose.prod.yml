@@ -5,10 +5,10 @@ services:
       - "${FOAMPILOT_PORT:-8000}:8000"
     volumes:
       - ${FOAMPILOT_CASES}:/home/openfoam/run
-      - ${FOAMPILOT_TEMPLATES}:/home/openfoam/templates
+      - ${FOAMPILOT_TEMPLATES}:/home/openfoam/user-templates
     environment:
       FOAM_RUN: /home/openfoam/run
-      FOAM_TEMPLATES: /home/openfoam/templates
+      FOAM_USER_TEMPLATES: /home/openfoam/user-templates
       FOAM_CORES: ${FOAM_CORES:-4}
     deploy:
       resources:

@@ -1276,16 +1276,27 @@ describe('Codex generation (--host codex)', () => {
   });
 
   // Dynamic discovery of expected Codex skills: all templates except /codex
+  // Also excludes skills where .agents/skills/{name} is a symlink back to the repo root
+  // (vendored dev mode — gen-skill-docs skips these to avoid overwriting Claude SKILL.md)
   const CODEX_SKILLS = (() => {
     const skills: Array<{ dir: string; codexName: string }> = [];
+    const isSymlinkLoop = (codexName: string): boolean => {
+      const agentSkillDir = path.join(ROOT, '.agents', 'skills', codexName);
+      try {
+        return fs.realpathSync(agentSkillDir) === fs.realpathSync(ROOT);
+      } catch { return false; }
+    };
     if (fs.existsSync(path.join(ROOT, 'SKILL.md.tmpl'))) {
-      skills.push({ dir: '.', codexName: 'gstack' });
+      if (!isSymlinkLoop('gstack')) {
+        skills.push({ dir: '.', codexName: 'gstack' });
+      }
     }
     for (const entry of fs.readdirSync(ROOT, { withFileTypes: true })) {
       if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'node_modules') continue;
       if (entry.name === 'codex') continue; // /codex is excluded from Codex output
       if (!fs.existsSync(path.join(ROOT, entry.name, 'SKILL.md.tmpl'))) continue;
       const codexName = entry.name.startsWith('gstack-') ? entry.name : `gstack-${entry.name}`;
+      if (isSymlinkLoop(codexName)) continue;
       skills.push({ dir: entry.name, codexName });
     }
     return skills;
@@ -1304,9 +1315,10 @@ describe('Codex generation (--host codex)', () => {
     const content = fs.readFileSync(rootMetadata, 'utf-8');
     expect(content).toContain('display_name: "gstack"');
     expect(content).toContain('Use $gstack to locate the bundled gstack skills.');
+    expect(content).toContain('allow_implicit_invocation: true');
   });
 
-  test('codexSkillName mapping: root is gstack, others are gstack-{dir}', () => {
+  test('externalSkillName mapping: root is gstack, others are gstack-{dir}', () => {
     // Root → gstack
     expect(fs.existsSync(path.join(AGENTS_DIR, 'gstack', 'SKILL.md'))).toBe(true);
     // Subdirectories → gstack-{dir}
@@ -1559,6 +1571,160 @@ describe('Codex generation (--host codex)', () => {
   });
 });
 
+// ─── Factory generation tests ────────────────────────────────
+
+describe('Factory generation (--host factory)', () => {
+  const FACTORY_DIR = path.join(ROOT, '.factory', 'skills');
+
+  // Generate Factory output for tests
+  Bun.spawnSync(['bun', 'run', 'scripts/gen-skill-docs.ts', '--host', 'factory'], {
+    cwd: ROOT, stdout: 'pipe', stderr: 'pipe',
+  });
+
+  const FACTORY_SKILLS = (() => {
+    const skills: Array<{ dir: string; factoryName: string }> = [];
+    const isSymlinkLoop = (name: string): boolean => {
+      const factorySkillDir = path.join(ROOT, '.factory', 'skills', name);
+      try { return fs.realpathSync(factorySkillDir) === fs.realpathSync(ROOT); }
+      catch { return false; }
+    };
+    if (fs.existsSync(path.join(ROOT, 'SKILL.md.tmpl'))) {
+      if (!isSymlinkLoop('gstack')) skills.push({ dir: '.', factoryName: 'gstack' });
+    }
+    for (const entry of fs.readdirSync(ROOT, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name.startsWith('.') || entry.name === 'node_modules') continue;
+      if (entry.name === 'codex') continue;
+      if (!fs.existsSync(path.join(ROOT, entry.name, 'SKILL.md.tmpl'))) continue;
+      const factoryName = entry.name.startsWith('gstack-') ? entry.name : `gstack-${entry.name}`;
+      if (isSymlinkLoop(factoryName)) continue;
+      skills.push({ dir: entry.name, factoryName });
+    }
+    return skills;
+  })();
+
+  test('--host factory generates correct output paths', () => {
+    for (const skill of FACTORY_SKILLS) {
+      const skillMd = path.join(FACTORY_DIR, skill.factoryName, 'SKILL.md');
+      expect(fs.existsSync(skillMd)).toBe(true);
+    }
+  });
+
+  test('Factory frontmatter has name + description + user-invocable', () => {
+    for (const skill of FACTORY_SKILLS) {
+      const content = fs.readFileSync(path.join(FACTORY_DIR, skill.factoryName, 'SKILL.md'), 'utf-8');
+      const fmEnd = content.indexOf('\n---', 4);
+      const frontmatter = content.slice(4, fmEnd);
+      expect(frontmatter).toContain('name:');
+      expect(frontmatter).toContain('description:');
+      expect(frontmatter).toContain('user-invocable: true');
+      expect(frontmatter).not.toContain('allowed-tools:');
+      expect(frontmatter).not.toContain('preamble-tier:');
+      expect(frontmatter).not.toContain('sensitive:');
+    }
+  });
+
+  test('sensitive skills have disable-model-invocation', () => {
+    const SENSITIVE = ['gstack-ship', 'gstack-land-and-deploy', 'gstack-guard', 'gstack-careful', 'gstack-freeze', 'gstack-unfreeze'];
+    for (const name of SENSITIVE) {
+      const content = fs.readFileSync(path.join(FACTORY_DIR, name, 'SKILL.md'), 'utf-8');
+      const fmEnd = content.indexOf('\n---', 4);
+      const frontmatter = content.slice(4, fmEnd);
+      expect(frontmatter).toContain('disable-model-invocation: true');
+    }
+  });
+
+  test('non-sensitive skills lack disable-model-invocation', () => {
+    const NON_SENSITIVE = ['gstack-qa', 'gstack-review', 'gstack-investigate', 'gstack-browse'];
+    for (const name of NON_SENSITIVE) {
+      const content = fs.readFileSync(path.join(FACTORY_DIR, name, 'SKILL.md'), 'utf-8');
+      const fmEnd = content.indexOf('\n---', 4);
+      const frontmatter = content.slice(4, fmEnd);
+      expect(frontmatter).not.toContain('disable-model-invocation');
+    }
+  });
+
+  test('no .claude/skills/ in Factory output', () => {
+    for (const skill of FACTORY_SKILLS) {
+      const content = fs.readFileSync(path.join(FACTORY_DIR, skill.factoryName, 'SKILL.md'), 'utf-8');
+      expect(content).not.toContain('.claude/skills');
+    }
+  });
+
+  test('no ~/.claude/skills/ paths in Factory output', () => {
+    for (const skill of FACTORY_SKILLS) {
+      const content = fs.readFileSync(path.join(FACTORY_DIR, skill.factoryName, 'SKILL.md'), 'utf-8');
+      // ~/.claude/skills should be rewritten, but ~/.claude/plans is legitimate
+      // (plan directory lookup) and ~/.claude/ in codex prompts is intentional
+      expect(content).not.toContain('~/.claude/skills');
+    }
+  });
+
+  test('/codex skill excluded from Factory output', () => {
+    expect(fs.existsSync(path.join(FACTORY_DIR, 'gstack-codex', 'SKILL.md'))).toBe(false);
+    expect(fs.existsSync(path.join(FACTORY_DIR, 'gstack-codex'))).toBe(false);
+  });
+
+  test('Factory keeps Codex integration blocks', () => {
+    // Factory users CAN use Codex second opinions (codex exec is a standalone binary)
+    const shipContent = fs.readFileSync(path.join(FACTORY_DIR, 'gstack-ship', 'SKILL.md'), 'utf-8');
+    expect(shipContent).toContain('codex');
+  });
+
+  test('no agents/openai.yaml in Factory output', () => {
+    for (const skill of FACTORY_SKILLS) {
+      const yamlPath = path.join(FACTORY_DIR, skill.factoryName, 'agents', 'openai.yaml');
+      expect(fs.existsSync(yamlPath)).toBe(false);
+    }
+  });
+
+  test('--host droid alias works', () => {
+    const factoryResult = Bun.spawnSync(['bun', 'run', 'scripts/gen-skill-docs.ts', '--host', 'factory', '--dry-run'], {
+      cwd: ROOT, stdout: 'pipe', stderr: 'pipe',
+    });
+    const droidResult = Bun.spawnSync(['bun', 'run', 'scripts/gen-skill-docs.ts', '--host', 'droid', '--dry-run'], {
+      cwd: ROOT, stdout: 'pipe', stderr: 'pipe',
+    });
+    expect(factoryResult.exitCode).toBe(0);
+    expect(droidResult.exitCode).toBe(0);
+    expect(factoryResult.stdout.toString()).toBe(droidResult.stdout.toString());
+  });
+
+  test('--host factory --dry-run freshness', () => {
+    const result = Bun.spawnSync(['bun', 'run', 'scripts/gen-skill-docs.ts', '--host', 'factory', '--dry-run'], {
+      cwd: ROOT, stdout: 'pipe', stderr: 'pipe',
+    });
+    expect(result.exitCode).toBe(0);
+    const output = result.stdout.toString();
+    for (const skill of FACTORY_SKILLS) {
+      expect(output).toContain(`FRESH: .factory/skills/${skill.factoryName}/SKILL.md`);
+    }
+    expect(output).not.toContain('STALE');
+  });
+
+  test('Factory preamble uses .factory paths', () => {
+    const content = fs.readFileSync(path.join(FACTORY_DIR, 'gstack-review', 'SKILL.md'), 'utf-8');
+    expect(content).toContain('GSTACK_ROOT');
+    expect(content).toContain('$_ROOT/.factory/skills/gstack');
+    expect(content).toContain('$GSTACK_BIN/gstack-config');
+  });
+});
+
+// ─── --host all tests ────────────────────────────────────────
+
+describe('--host all', () => {
+  test('--host all generates for claude, codex, and factory', () => {
+    const result = Bun.spawnSync(['bun', 'run', 'scripts/gen-skill-docs.ts', '--host', 'all', '--dry-run'], {
+      cwd: ROOT, stdout: 'pipe', stderr: 'pipe',
+    });
+    expect(result.exitCode).toBe(0);
+    const output = result.stdout.toString();
+    // All three hosts should appear in output
+    expect(output).toContain('FRESH: SKILL.md');           // claude
+    expect(output).toContain('FRESH: .agents/skills/');     // codex
+    expect(output).toContain('FRESH: .factory/skills/');    // factory
+  });
+});
+
 // ─── Setup script validation ─────────────────────────────────
 // These tests verify the setup script's install layout matches
 // what the generator produces — catching the bug where setup
@@ -1636,7 +1802,7 @@ describe('setup script validation', () => {
 
   test('setup supports --host auto|claude|codex|kiro', () => {
     expect(setupContent).toContain('--host');
-    expect(setupContent).toContain('claude|codex|kiro|auto');
+    expect(setupContent).toContain('claude|codex|kiro|factory|auto');
   });
 
   test('auto mode detects claude, codex, and kiro binaries', () => {
@@ -1955,5 +2121,115 @@ describe('codex commands must not use inline $(git rev-parse --show-toplevel) fo
       }
     }
     expect(violations).toEqual([]);
+  });
+});
+
+// ─── Learnings + Confidence Resolver Tests ─────────────────────
+
+describe('LEARNINGS_SEARCH resolver', () => {
+  const SEARCH_SKILLS = ['review', 'ship', 'plan-eng-review', 'investigate', 'office-hours', 'plan-ceo-review'];
+
+  for (const skill of SEARCH_SKILLS) {
+    test(`${skill} generated SKILL.md contains learnings search`, () => {
+      const content = fs.readFileSync(path.join(ROOT, skill, 'SKILL.md'), 'utf-8');
+      expect(content).toContain('Prior Learnings');
+      expect(content).toContain('gstack-learnings-search');
+    });
+  }
+
+  test('learnings search includes cross-project config check', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'review', 'SKILL.md'), 'utf-8');
+    expect(content).toContain('cross_project_learnings');
+    expect(content).toContain('--cross-project');
+  });
+
+  test('learnings search includes AskUserQuestion for first-time cross-project opt-in', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'review', 'SKILL.md'), 'utf-8');
+    expect(content).toContain('Enable cross-project learnings');
+    expect(content).toContain('project-scoped only');
+  });
+
+  test('learnings search mentions prior learning applied display format', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'review', 'SKILL.md'), 'utf-8');
+    expect(content).toContain('Prior learning applied');
+  });
+});
+
+describe('LEARNINGS_LOG resolver', () => {
+  const LOG_SKILLS = ['review', 'retro', 'investigate'];
+
+  for (const skill of LOG_SKILLS) {
+    test(`${skill} generated SKILL.md contains learnings log`, () => {
+      const content = fs.readFileSync(path.join(ROOT, skill, 'SKILL.md'), 'utf-8');
+      expect(content).toContain('Capture Learnings');
+      expect(content).toContain('gstack-learnings-log');
+    });
+  }
+
+  test('learnings log documents all type values', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'review', 'SKILL.md'), 'utf-8');
+    for (const type of ['pattern', 'pitfall', 'preference', 'architecture', 'tool']) {
+      expect(content).toContain(type);
+    }
+  });
+
+  test('learnings log documents all source values', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'review', 'SKILL.md'), 'utf-8');
+    for (const source of ['observed', 'user-stated', 'inferred', 'cross-model']) {
+      expect(content).toContain(source);
+    }
+  });
+
+  test('learnings log includes files field for staleness detection', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'review', 'SKILL.md'), 'utf-8');
+    expect(content).toContain('"files"');
+    expect(content).toContain('staleness detection');
+  });
+});
+
+describe('CONFIDENCE_CALIBRATION resolver', () => {
+  const CONFIDENCE_SKILLS = ['review', 'ship', 'plan-eng-review', 'cso'];
+
+  for (const skill of CONFIDENCE_SKILLS) {
+    test(`${skill} generated SKILL.md contains confidence calibration`, () => {
+      const content = fs.readFileSync(path.join(ROOT, skill, 'SKILL.md'), 'utf-8');
+      expect(content).toContain('Confidence Calibration');
+      expect(content).toContain('confidence score');
+    });
+  }
+
+  test('confidence calibration includes scoring rubric with all tiers', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'review', 'SKILL.md'), 'utf-8');
+    expect(content).toContain('9-10');
+    expect(content).toContain('7-8');
+    expect(content).toContain('5-6');
+    expect(content).toContain('3-4');
+    expect(content).toContain('1-2');
+  });
+
+  test('confidence calibration includes display rules', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'review', 'SKILL.md'), 'utf-8');
+    expect(content).toContain('Show normally');
+    expect(content).toContain('Suppress from main report');
+  });
+
+  test('confidence calibration includes finding format example', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'review', 'SKILL.md'), 'utf-8');
+    expect(content).toContain('[P1] (confidence:');
+    expect(content).toContain('SQL injection');
+  });
+
+  test('confidence calibration includes calibration learning feedback loop', () => {
+    const content = fs.readFileSync(path.join(ROOT, 'review', 'SKILL.md'), 'utf-8');
+    expect(content).toContain('calibration event');
+    expect(content).toContain('Log the corrected pattern');
+  });
+
+  test('skills without confidence calibration do NOT contain it', () => {
+    // office-hours and retro do NOT use confidence calibration
+    for (const skill of ['office-hours', 'retro']) {
+      const content = fs.readFileSync(path.join(ROOT, skill, 'SKILL.md'), 'utf-8');
+      expect(content).not.toContain('## Confidence Calibration');
+    }
   });
 });

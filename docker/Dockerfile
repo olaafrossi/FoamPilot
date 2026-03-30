@@ -31,12 +31,16 @@ RUN pip install --no-cache-dir --break-system-packages -r /tmp/requirements.txt 
 
 # ── Non-root user ────────────────────────────────────────────────────
 RUN useradd -m -s /bin/bash openfoam && \
-    mkdir -p /home/openfoam/run /home/openfoam/templates && \
+    mkdir -p /home/openfoam/run && \
     chown -R openfoam:openfoam /home/openfoam
 
 ENV FOAM_RUN=/home/openfoam/run
+ENV FOAM_TEMPLATES=/opt/foampilot/templates
 
-# ── Backend ──────────────────────────────────────────────────────────
+# ── Templates ────��───────────────────────────────────────────────────
+COPY --chown=openfoam:openfoam templates/ /opt/foampilot/templates/
+
+# ��─ Backend ───────────────────────────────────────────────────���──────
 COPY backend/ /app/
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh && chown -R openfoam:openfoam /app

@@ -16,7 +16,21 @@
       "Bash(done)",
       "Bash(cp:*)",
       "Bash(# Copy 0.orig -> 0 so the template has the BC files where expected\ncp -r /c/dev/FoamPilot/templates/airFoil2D/0.orig /c/dev/FoamPilot/templates/airFoil2D/0 && \\\\\n# Copy polyMesh.orig -> polyMesh so the mesh is where expected\ncp -r /c/dev/FoamPilot/templates/airFoil2D/constant/polyMesh.orig /c/dev/FoamPilot/templates/airFoil2D/constant/polyMesh && \\\\\necho \"Done\")",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(find /c/dev/FoamPilot -name *icon* -type f)",
+      "Bash(find /c/dev/FoamPilot/electron-ui -type f \\\\\\(-name *.png -o -name *.ico -o -name *.icns -o -name *.jpg -o -name *.svg \\\\\\))",
+      "Bash(find /c/dev/FoamPilot/electron-ui/src -type f -name *.png -o -name *.ico -o -name *.svg)",
+      "Bash(convert --version)",
+      "Bash(npx sharp-cli:*)",
+      "Bash(node build/generate-icons.mjs)",
+      "Bash(npm ls:*)",
+      "Bash(npx --yes --package=sharp node build/generate-icons.mjs)",
+      "Bash(npm install:*)",
+      "Bash(ls:*)",
+      "Bash(find /dev/FoamPilot -path *backend/routers*.py -type f)",
+      "Bash(gh release:*)",
+      "Bash(gh api:*)",
+      "Bash(gh run:*)"
     ]
   }
 }
