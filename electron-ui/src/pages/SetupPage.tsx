@@ -261,6 +261,26 @@ export default function SetupPage({ onReady }: SetupPageProps) {
             Ready — launching FoamPilot...
           </p>
         )}
+
+        {/* Always allow skipping setup */}
+        {step !== "ready" && (
+          <button
+            onClick={onReady}
+            className="block mx-auto mt-6 text-[12px] transition-colors"
+            style={{
+              background: "transparent",
+              border: "none",
+              color: "var(--fg-muted)",
+              cursor: "pointer",
+              textDecoration: "underline",
+              textUnderlineOffset: 2,
+            }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--fg)"; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.color = "var(--fg-muted)"; }}
+          >
+            Skip — continue without Docker
+          </button>
+        )}
       </div>
     </div>
   );

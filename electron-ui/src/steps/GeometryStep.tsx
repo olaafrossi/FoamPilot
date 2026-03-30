@@ -1,6 +1,17 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { fetchTemplates, createCase } from "../api";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { fetchTemplates, createCase, uploadGeometry, transformGeometry } from "../api";
 import type { Template } from "../types";
+import MeshPreview from "../components/MeshPreview";
+import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
+import * as THREE from "three";
+
+const UNIT_OPTIONS = [
+  { label: "Millimeters (mm)", value: "mm", scale: 0.001, hint: "Most CAD tools export in mm" },
+  { label: "Meters (m)", value: "m", scale: 1.0, hint: "Already in SI units" },
+  { label: "Centimeters (cm)", value: "cm", scale: 0.01, hint: "" },
+  { label: "Inches (in)", value: "in", scale: 0.0254, hint: "Common in imperial CAD" },
+  { label: "Feet (ft)", value: "ft", scale: 0.3048, hint: "" },
+] as const;
 
 interface StepProps {
   caseName: string | null;
@@ -16,13 +27,11 @@ interface StepProps {
   setGeometryClass: (c: string | null) => void;
 }
 
-// Templates without geometry get dimmed with "(soon)"
-function isAvailable(t: Template): boolean {
-  return t.has_geometry !== false || t.category === "verification";
+function isAvailable(_t: Template): boolean {
+  return true;
 }
 
 function deriveVelocity(t: Template): number {
-  // Extract velocity magnitude from template physics if available
   const physics = (t as any).physics;
   if (physics?.magUInf) return physics.magUInf;
   if (physics?.velocity) {
@@ -30,7 +39,7 @@ function deriveVelocity(t: Template): number {
     if (Array.isArray(v)) return Math.sqrt(v[0] ** 2 + v[1] ** 2 + v[2] ** 2);
     if (typeof v === "number") return v;
   }
-  return 20; // default
+  return 20;
 }
 
 export default function GeometryStep({
@@ -52,7 +61,54 @@ export default function GeometryStep({
   const [retryCount, setRetryCount] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
 
-  // Load tutorial status + templates together to avoid race condition on auto-select
+  // STL upload state
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [stlUnit, setStlUnit] = useState("mm");
+  const [dragOver, setDragOver] = useState(false);
+  const [rawBounds, setRawBounds] = useState<{ size: [number, number, number] } | null>(null);
+
+  // Post-upload state (STL uploaded, case created — show preview + transform controls)
+  const [uploadInfo, setUploadInfo] = useState<{
+    filename: string;
+    triangles: number;
+    bounds: { min: number[]; max: number[] };
+  } | null>(null);
+  const [previewKey, setPreviewKey] = useState(0);
+  const [transforming, setTransforming] = useState(false);
+
+  // Parse pending STL client-side to get raw dimensions for scale preview
+  useEffect(() => {
+    if (!pendingFile) { setRawBounds(null); return; }
+    let cancelled = false;
+    pendingFile.arrayBuffer().then((buf) => {
+      if (cancelled) return;
+      try {
+        const loader = new STLLoader();
+        const geo = loader.parse(buf);
+        geo.computeBoundingBox();
+        const s = new THREE.Vector3();
+        geo.boundingBox!.getSize(s);
+        setRawBounds({ size: [s.x, s.y, s.z] });
+      } catch {
+        setRawBounds(null);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [pendingFile]);
+
+  // Resulting dimensions after applying the selected scale factor
+  const scaledDims = useMemo(() => {
+    if (!rawBounds) return null;
+    const unitOpt = UNIT_OPTIONS.find((u) => u.value === stlUnit);
+    const scale = unitOpt?.scale ?? 1.0;
+    const [rx, ry, rz] = rawBounds.size;
+    const m = { x: rx * scale, y: ry * scale, z: rz * scale };
+    const mToFt = 3.28084;
+    const ft = { x: m.x * mToFt, y: m.y * mToFt, z: m.z * mToFt };
+    return { m, ft };
+  }, [rawBounds, stlUnit]);
+
+  // Load tutorial status + templates together
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -68,16 +124,12 @@ export default function GeometryStep({
         setTemplates(tpls);
         setLoading(false);
 
-        // Auto-select based on first-run or returning user
         if (caseName && templateName) {
-          // Back navigation: restore previous selection
           setSelectedPath(templateName);
         } else if (!status.onboarding_completed) {
-          // First run: select first verification tutorial
           const firstTutorial = tpls.find((t) => t.category === "verification" && isAvailable(t));
           if (firstTutorial) setSelectedPath(firstTutorial.path);
         } else {
-          // Returning user: select first simulation
           const firstSim = tpls.find((t) => t.category !== "verification" && isAvailable(t));
           if (firstSim) setSelectedPath(firstSim.path);
         }
@@ -102,6 +154,19 @@ export default function GeometryStep({
     if (!isAvailable(t)) return;
     setSelectedPath(t.path);
     setCreateError(null);
+    setPendingFile(null);
+    setUploadInfo(null);
+  }, []);
+
+  const handleFileDrop = useCallback((files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    const file = files[0];
+    if (!file.name.toLowerCase().endsWith(".stl")) {
+      setCreateError("Please upload an STL file");
+      return;
+    }
+    setCreateError(null);
+    setPendingFile(file);
   }, []);
 
   const handleCreate = useCallback(async () => {
@@ -109,28 +174,60 @@ export default function GeometryStep({
     setCreating(true);
     setCreateError(null);
 
-    // Derive case name from template path (use last segment, replace slashes)
     const caseSuffix = selected.path.split("/").pop() ?? selected.path;
     const name = caseSuffix.replace(/[^a-zA-Z0-9_-]/g, "_");
 
     try {
       await createCase(name, selected.path);
+
+      // Upload custom STL if provided
+      if (pendingFile) {
+        const unitOption = UNIT_OPTIONS.find((u) => u.value === stlUnit) ?? UNIT_OPTIONS[0];
+        const info = await uploadGeometry(name, pendingFile, unitOption.scale, selected.path);
+        setUploadInfo(info);
+        setPendingFile(null);
+      }
+
       setCaseName(name);
       setTemplateName(selected.path);
       setVelocity(deriveVelocity(selected));
       completeStep(0);
-      goNext();
+
+      // If no STL was uploaded, proceed immediately
+      if (!pendingFile) goNext();
     } catch (e) {
       setCreateError(e instanceof Error ? e.message : "Failed to create case");
     } finally {
       setCreating(false);
     }
-  }, [selected, creating, setCaseName, setTemplateName, setVelocity, completeStep, goNext]);
+  }, [selected, creating, pendingFile, stlUnit, setCaseName, setTemplateName, setVelocity, completeStep, goNext]);
 
   const handleContinue = useCallback(() => {
     completeStep(0);
     goNext();
   }, [completeStep, goNext]);
+
+  const handleTransform = useCallback(async (transform: {
+    rotate_x?: number;
+    rotate_y?: number;
+    rotate_z?: number;
+    translate_x?: number;
+    translate_y?: number;
+    translate_z?: number;
+  }) => {
+    if (!caseName) return;
+    setTransforming(true);
+    setCreateError(null);
+    try {
+      const info = await transformGeometry(caseName, transform);
+      setUploadInfo((prev) => prev ? { ...prev, bounds: info.bounds } : prev);
+      setPreviewKey((k) => k + 1);
+    } catch (e: unknown) {
+      setCreateError(e instanceof Error ? e.message : "Failed to transform geometry");
+    } finally {
+      setTransforming(false);
+    }
+  }, [caseName]);
 
   // Keyboard navigation
   const selectableItems = [...simulations, ...verification].filter(isAvailable);
@@ -150,11 +247,12 @@ export default function GeometryStep({
         setSelectedPath(selectableItems[prev].path);
       } else if (e.key === "Enter" && selected) {
         e.preventDefault();
-        if (caseAlreadyCreated) handleContinue();
+        if (uploadInfo) handleContinue();
+        else if (caseAlreadyCreated) handleContinue();
         else handleCreate();
       }
     },
-    [selectableItems, selectedPath, selected, caseAlreadyCreated, handleCreate, handleContinue],
+    [selectableItems, selectedPath, selected, uploadInfo, caseAlreadyCreated, handleCreate, handleContinue],
   );
 
   // ── Render ──────────────────────────────────────────────────────
@@ -177,7 +275,6 @@ export default function GeometryStep({
         onKeyDown={handleKeyDown}
       >
         {loading ? (
-          // Skeleton rows
           <>
             <GroupHeader label="SIMULATIONS" />
             {[1, 2, 3, 4].map((i) => (
@@ -197,7 +294,6 @@ export default function GeometryStep({
             ))}
           </>
         ) : error ? (
-          // Error state
           <div className="flex flex-col items-center justify-center h-full px-4 text-center gap-3">
             <span style={{ fontSize: 24 }}>!</span>
             <p style={{ color: "var(--error)", fontSize: 13 }}>Could not connect to backend</p>
@@ -223,7 +319,6 @@ export default function GeometryStep({
           </div>
         ) : (
           <>
-            {/* Simulations group */}
             <GroupHeader label="SIMULATIONS" />
             {simulations.map((t) => (
               <ListItem
@@ -236,7 +331,6 @@ export default function GeometryStep({
               />
             ))}
 
-            {/* Setup Verification group */}
             {verification.length > 0 && (
               <>
                 <GroupHeader label="SETUP VERIFICATION" />
@@ -344,6 +438,278 @@ export default function GeometryStep({
               )}
             </div>
 
+            {/* ── STL Upload (pre-upload state) ── */}
+            {selected.category !== "verification" && !uploadInfo && (
+              <div style={{ marginTop: 16 }}>
+                <p style={{ fontSize: 11, fontWeight: 600, color: "var(--fg-muted)", marginBottom: 6 }}>
+                  {selected.has_geometry !== false ? "Replace geometry (optional)" : "Upload geometry (required)"}
+                </p>
+                <div
+                  onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFileDrop(e.dataTransfer.files); }}
+                  onClick={() => {
+                    const input = document.createElement("input");
+                    input.type = "file";
+                    input.accept = ".stl";
+                    input.onchange = () => handleFileDrop(input.files);
+                    input.click();
+                  }}
+                  style={{
+                    border: `1px dashed ${dragOver ? "var(--accent)" : "var(--border)"}`,
+                    borderRadius: 3,
+                    padding: pendingFile ? "8px 12px" : "16px 12px",
+                    textAlign: "center",
+                    cursor: "pointer",
+                    background: dragOver ? "var(--bg-selection)" : "transparent",
+                    transition: "border-color 150ms, background 150ms",
+                  }}
+                >
+                  {pendingFile ? (
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: 12, color: "var(--fg)" }}>{pendingFile.name}</span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); setPendingFile(null); }}
+                        style={{
+                          background: "none",
+                          border: "none",
+                          color: "var(--fg-muted)",
+                          cursor: "pointer",
+                          fontSize: 14,
+                          padding: "0 4px",
+                        }}
+                        aria-label="Remove file"
+                      >
+                        &times;
+                      </button>
+                    </div>
+                  ) : (
+                    <p style={{ fontSize: 12, color: "var(--fg-muted)", margin: 0 }}>
+                      Drop STL here or click to browse
+                    </p>
+                  )}
+                </div>
+
+                {/* Unit selector + scale preview — shown when a file is staged */}
+                {pendingFile && (
+                  <div style={{ marginTop: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <label style={{ fontSize: 11, color: "var(--fg-muted)", whiteSpace: "nowrap" }}>
+                        STL units:
+                      </label>
+                      <select
+                        value={stlUnit}
+                        onChange={(e) => setStlUnit(e.target.value)}
+                        style={{
+                          flex: 1,
+                          fontSize: 12,
+                          padding: "3px 6px",
+                          background: "var(--bg-elevated)",
+                          color: "var(--fg)",
+                          border: "1px solid var(--border)",
+                          borderRadius: 2,
+                        }}
+                      >
+                        {UNIT_OPTIONS.map((u) => (
+                          <option key={u.value} value={u.value}>
+                            {u.label}{u.hint ? ` — ${u.hint}` : ""}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {stlUnit !== "m" && (
+                      <p style={{ fontSize: 11, color: "var(--fg-muted)", marginTop: 4 }}>
+                        Vertices will be scaled by {UNIT_OPTIONS.find((u) => u.value === stlUnit)?.scale} to convert to meters.
+                      </p>
+                    )}
+
+                    {/* Resulting dimensions preview */}
+                    {scaledDims && (
+                      <div
+                        style={{
+                          marginTop: 8,
+                          padding: 8,
+                          background: "var(--bg-elevated)",
+                          border: "1px solid var(--border)",
+                          borderRadius: 2,
+                        }}
+                      >
+                        <p style={{ fontSize: 11, fontWeight: 600, color: "var(--fg-muted)", marginBottom: 4 }}>
+                          Resulting dimensions after scaling
+                        </p>
+                        <div style={{ fontSize: 11, fontFamily: "var(--font-mono, monospace)" }}>
+                          <div style={{ display: "flex", gap: 16, color: "var(--fg)" }}>
+                            <span style={{ color: "var(--fg-muted)", minWidth: 40 }}>Meters:</span>
+                            <span>{scaledDims.m.x.toFixed(3)} &times; {scaledDims.m.y.toFixed(3)} &times; {scaledDims.m.z.toFixed(3)} m</span>
+                          </div>
+                          <div style={{ display: "flex", gap: 16, color: "var(--fg)", marginTop: 2 }}>
+                            <span style={{ color: "var(--fg-muted)", minWidth: 40 }}>Feet:</span>
+                            <span>{scaledDims.ft.x.toFixed(2)} &times; {scaledDims.ft.y.toFixed(2)} &times; {scaledDims.ft.z.toFixed(2)} ft</span>
+                          </div>
+                        </div>
+                        {scaledDims.m.x < 0.01 && scaledDims.m.y < 0.01 && scaledDims.m.z < 0.01 && (
+                          <p style={{ fontSize: 11, color: "var(--warning)", marginTop: 6 }}>
+                            Very small — dimensions are all under 1 cm. Check if the correct unit is selected.
+                          </p>
+                        )}
+                        {(scaledDims.m.x > 1000 || scaledDims.m.y > 1000 || scaledDims.m.z > 1000) && (
+                          <p style={{ fontSize: 11, color: "var(--warning)", marginTop: 6 }}>
+                            Very large — a dimension exceeds 1 km. Check if the correct unit is selected.
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* ── Post-upload: 3D preview + transform controls ── */}
+            {uploadInfo && caseName && (
+              <div style={{ marginTop: 16 }}>
+                {/* Upload info summary */}
+                <div style={{ display: "flex", gap: 6, fontSize: 11, color: "var(--fg-muted)", marginBottom: 8 }}>
+                  <span>{uploadInfo.filename}</span>
+                  <span>&middot;</span>
+                  <span>{uploadInfo.triangles.toLocaleString()} triangles</span>
+                </div>
+
+                {/* 3D preview */}
+                <div style={{ height: 250, border: "1px solid var(--border)", borderRadius: 2, overflow: "hidden" }}>
+                  <MeshPreview caseName={caseName} refreshKey={previewKey} />
+                </div>
+
+                {/* Bounding box readout */}
+                {uploadInfo.bounds && (
+                  <div
+                    style={{
+                      marginTop: 8,
+                      padding: 8,
+                      background: "var(--bg-elevated)",
+                      border: "1px solid var(--border)",
+                      borderRadius: 2,
+                    }}
+                  >
+                    <p style={{ fontSize: 11, fontWeight: 600, color: "var(--fg-muted)", marginBottom: 4 }}>
+                      Bounding box (meters)
+                    </p>
+                    <div style={{ display: "flex", gap: 12, fontSize: 11, fontFamily: "var(--font-mono, monospace)", color: "var(--fg)" }}>
+                      <span>
+                        <span style={{ color: "#ef4444" }}>X:</span>{" "}
+                        {uploadInfo.bounds.min[0].toFixed(3)} to {uploadInfo.bounds.max[0].toFixed(3)}
+                        <span style={{ color: "var(--fg-muted)" }}> ({(uploadInfo.bounds.max[0] - uploadInfo.bounds.min[0]).toFixed(3)})</span>
+                      </span>
+                      <span>
+                        <span style={{ color: "#22c55e" }}>Y:</span>{" "}
+                        {uploadInfo.bounds.min[1].toFixed(3)} to {uploadInfo.bounds.max[1].toFixed(3)}
+                        <span style={{ color: "var(--fg-muted)" }}> ({(uploadInfo.bounds.max[1] - uploadInfo.bounds.min[1]).toFixed(3)})</span>
+                      </span>
+                      <span>
+                        <span style={{ color: "#3b82f6" }}>Z:</span>{" "}
+                        {uploadInfo.bounds.min[2].toFixed(3)} to {uploadInfo.bounds.max[2].toFixed(3)}
+                        <span style={{ color: "var(--fg-muted)" }}> ({(uploadInfo.bounds.max[2] - uploadInfo.bounds.min[2]).toFixed(3)})</span>
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Axis alignment controls */}
+                <div
+                  style={{
+                    marginTop: 10,
+                    padding: 10,
+                    background: "var(--bg-elevated)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 2,
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "var(--fg)" }}>
+                      Align Geometry to Simulation Axes
+                    </span>
+                    {transforming && (
+                      <span style={{ fontSize: 11, color: "var(--fg-muted)" }}>Applying...</span>
+                    )}
+                  </div>
+
+                  <p style={{ fontSize: 11, color: "var(--fg-muted)", lineHeight: 1.5, marginBottom: 8 }}>
+                    Expected: <span style={{ color: "#ef4444" }}>X = flow direction</span>,{" "}
+                    <span style={{ color: "#22c55e" }}>Y = lateral (symmetry at Y=0)</span>,{" "}
+                    <span style={{ color: "#3b82f6" }}>Z = up</span>.
+                  </p>
+
+                  {/* Rotate 90° */}
+                  <p style={{ fontSize: 11, fontWeight: 600, color: "var(--fg-muted)", marginBottom: 4 }}>
+                    Rotate 90&deg;
+                  </p>
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>
+                    {([
+                      { label: "X +90°", axis: "rotate_x", neg: false },
+                      { label: "X -90°", axis: "rotate_x", neg: true },
+                      { label: "Y +90°", axis: "rotate_y", neg: false },
+                      { label: "Y -90°", axis: "rotate_y", neg: true },
+                      { label: "Z +90°", axis: "rotate_z", neg: false },
+                      { label: "Z -90°", axis: "rotate_z", neg: true },
+                    ] as const).map(({ label, axis, neg }) => (
+                      <TransformBtn
+                        key={label}
+                        label={label}
+                        disabled={transforming}
+                        onClick={() => handleTransform({ [axis]: neg ? -90 : 90 })}
+                      />
+                    ))}
+                  </div>
+
+                  {/* Common axis swaps */}
+                  <p style={{ fontSize: 11, fontWeight: 600, color: "var(--fg-muted)", marginBottom: 4 }}>
+                    Common axis swaps
+                  </p>
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>
+                    <TransformBtn label="Y-up → Z-up" disabled={transforming} onClick={() => handleTransform({ rotate_x: 90 })} />
+                    <TransformBtn label="Front Y → Front X" disabled={transforming} onClick={() => handleTransform({ rotate_z: 90 })} />
+                    <TransformBtn label="Z-forward → X-forward" disabled={transforming} onClick={() => handleTransform({ rotate_x: -90 })} />
+                    <TransformBtn label="Flip upside-down" disabled={transforming} onClick={() => handleTransform({ rotate_x: 180 })} />
+                  </div>
+
+                  {/* Auto-position */}
+                  <p style={{ fontSize: 11, fontWeight: 600, color: "var(--fg-muted)", marginBottom: 4 }}>
+                    Auto-position
+                  </p>
+                  <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+                    {uploadInfo.bounds && (
+                      <>
+                        <TransformBtn
+                          label="Snap to ground (Z=0)"
+                          disabled={transforming}
+                          onClick={() => {
+                            const minZ = uploadInfo.bounds.min[2];
+                            if (Math.abs(minZ) > 0.001) handleTransform({ translate_z: -minZ });
+                          }}
+                        />
+                        <TransformBtn
+                          label="Snap to symmetry (Y=0)"
+                          disabled={transforming}
+                          onClick={() => {
+                            const minY = uploadInfo.bounds.min[1];
+                            if (Math.abs(minY) > 0.001) handleTransform({ translate_y: -minY });
+                          }}
+                        />
+                        <TransformBtn
+                          label="Center X at origin"
+                          disabled={transforming}
+                          onClick={() => {
+                            const cx = (uploadInfo.bounds.min[0] + uploadInfo.bounds.max[0]) / 2;
+                            if (Math.abs(cx) > 0.001) handleTransform({ translate_x: -cx });
+                          }}
+                        />
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Spacer */}
             <div className="flex-1" />
 
@@ -363,7 +729,24 @@ export default function GeometryStep({
                   {createError}
                 </p>
               )}
-              {caseAlreadyCreated ? (
+              {uploadInfo ? (
+                /* After STL upload — user has reviewed preview + transforms, continue to next step */
+                <button
+                  onClick={handleContinue}
+                  style={{
+                    background: "var(--accent)",
+                    color: "#09090B",
+                    border: "none",
+                    borderRadius: 2,
+                    padding: "8px 20px",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Continue &#9654;
+                </button>
+              ) : caseAlreadyCreated ? (
                 <button
                   onClick={handleContinue}
                   style={{
@@ -395,7 +778,7 @@ export default function GeometryStep({
                   }}
                 >
                   {creating
-                    ? "Creating case..."
+                    ? pendingFile ? "Uploading STL..." : "Creating case..."
                     : selected.category === "verification"
                       ? "Run Tutorial \u25B6"
                       : "Create Case \u25B6"}
@@ -414,6 +797,33 @@ export default function GeometryStep({
 }
 
 // ── Sub-components ────────────────────────────────────────────────
+
+function TransformBtn({ label, disabled, onClick }: { label: string; disabled: boolean; onClick: () => void }) {
+  return (
+    <button
+      disabled={disabled}
+      onClick={onClick}
+      style={{
+        fontSize: 11,
+        padding: "3px 8px",
+        background: "transparent",
+        border: "1px solid var(--border)",
+        borderRadius: 2,
+        color: disabled ? "var(--fg-disabled)" : "var(--fg)",
+        cursor: disabled ? "wait" : "pointer",
+        transition: "border-color 100ms",
+      }}
+      onMouseEnter={(e) => {
+        if (!disabled) (e.currentTarget as HTMLElement).style.borderColor = "var(--accent)";
+      }}
+      onMouseLeave={(e) => {
+        (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+      }}
+    >
+      {label}
+    </button>
+  );
+}
 
 function GroupHeader({ label }: { label: string }) {
   return (
