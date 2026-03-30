@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, dialog, Notification } from "electron";
+import { app, BrowserWindow, ipcMain, shell, dialog, Menu, Notification } from "electron";
 import * as path from "path";
 import * as fs from "fs";
 import { DockerManager } from "./docker-manager";
@@ -32,6 +32,7 @@ function loadConfig(): { backendUrl: string; localCasesPath: string; paraViewPat
 }
 
 function createWindow() {
+  Menu.setApplicationMenu(null);
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
