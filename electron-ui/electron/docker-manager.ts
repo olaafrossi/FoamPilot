@@ -28,8 +28,8 @@ export interface AppConfig {
   localCasesPath: string;
   paraViewPath: string;
   cores: number;
-  dockerMemory?: string;
-  dockerCpus?: string;
+  dockerCpus: number;
+  dockerMemory: number;  // GB
 }
 
 export class DockerManager {
@@ -49,6 +49,14 @@ export class DockerManager {
 
   getComposeFile(): string {
     return this.composeFile;
+  }
+
+  /** Return host CPU count and total memory for UI validation bounds. */
+  getSystemResources(): { cpus: number; memoryGB: number } {
+    return {
+      cpus: Math.max(1, os.cpus().length),
+      memoryGB: Math.max(2, Math.floor(os.totalmem() / (1024 ** 3))),
+    };
   }
 
   /** Check if Docker is installed and the daemon is running. */
@@ -103,14 +111,18 @@ export class DockerManager {
     const templatesPath = path.join(this.dataDir, "templates");
     const version = this.getStoredVersion() || "latest";
 
+    const cores = config.cores ?? 4;
+    const cpus = config.dockerCpus ?? 4;
+    const memGB = config.dockerMemory ?? 8;
+
     const lines = [
       `FOAMPILOT_VERSION=${version}`,
       `FOAMPILOT_PORT=8000`,
       `FOAMPILOT_CASES=${casesPath}`,
       `FOAMPILOT_TEMPLATES=${templatesPath}`,
-      `FOAM_CORES=${config.cores ?? 4}`,
-      `DOCKER_CPUS=${config.dockerCpus ?? "4"}`,
-      `DOCKER_MEMORY=${config.dockerMemory ?? "8g"}`,
+      `FOAM_CORES=${cores}`,
+      `DOCKER_CPUS=${cpus}`,
+      `DOCKER_MEMORY=${memGB}g`,
     ];
     fs.writeFileSync(this.envFile, lines.join("\n") + "\n", "utf-8");
   }

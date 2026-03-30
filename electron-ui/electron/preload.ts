@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 
 contextBridge.exposeInMainWorld("foamPilot", {
   getConfig: () => ipcRenderer.invoke("get-config"),
+  saveConfig: (config: any) => ipcRenderer.invoke("save-config", config),
   openParaView: (casePath: string) => ipcRenderer.invoke("open-paraview", casePath),
   openFolder: (folderPath: string) => ipcRenderer.invoke("open-folder", folderPath),
   selectFile: (filters: { name: string; extensions: string[] }[]) =>
@@ -25,6 +26,8 @@ contextBridge.exposeInMainWorld("foamPilot", {
     healthCheck: () => ipcRenderer.invoke("docker:health"),
     ping: () => ipcRenderer.invoke("docker:ping"),
     diagnostics: () => ipcRenderer.invoke("docker:diagnostics"),
+    getSystemResources: () => ipcRenderer.invoke("docker:get-system-resources"),
+    updateResources: (config: any) => ipcRenderer.invoke("docker:update-resources", config),
     onProgress: (cb: (msg: string) => void) => {
       const handler = (_: any, msg: string) => cb(msg);
       ipcRenderer.on("docker:progress", handler);

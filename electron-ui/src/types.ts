@@ -3,6 +3,13 @@ export interface AppConfig {
   localCasesPath: string;
   paraViewPath: string;
   cores: number;
+  dockerCpus: number;
+  dockerMemory: number;  // GB
+}
+
+export interface SystemResources {
+  cpus: number;
+  memoryGB: number;
 }
 
 export interface Template {
@@ -199,6 +206,7 @@ declare global {
   interface Window {
     foamPilot: {
       getConfig: () => Promise<AppConfig>;
+      saveConfig: (config: AppConfig) => Promise<{ ok: boolean; error?: string }>;
       openParaView: (casePath: string) => Promise<{ ok: boolean; error?: string }>;
       openFolder: (folderPath: string) => Promise<void>;
       selectFile: (filters: { name: string; extensions: string[] }[]) => Promise<string | null>;
@@ -219,6 +227,8 @@ declare global {
         healthCheck: () => Promise<boolean>;
         ping: () => Promise<boolean>;
         diagnostics: () => Promise<DiagnosticResult>;
+        getSystemResources: () => Promise<SystemResources>;
+        updateResources: (config: AppConfig) => Promise<{ ok: boolean; healthy?: boolean; error?: string }>;
         onProgress: (cb: (msg: string) => void) => () => void;
         onStatusChange: (cb: (status: any) => void) => () => void;
       };

@@ -8,19 +8,28 @@ let mainWindow: BrowserWindow | null = null;
 let dockerManager: DockerManager;
 let updateManager: UpdateManager;
 
+function settingsJsonPath(): string {
+  return path.join(app.getAppPath(), "..", "settings.json");
+}
+
 // Load config from settings.json next to the executable (or project root in dev)
-function loadConfig(): { backendUrl: string; localCasesPath: string; paraViewPath: string; cores: number } {
+function loadConfig(): {
+  backendUrl: string; localCasesPath: string; paraViewPath: string;
+  cores: number; dockerCpus: number; dockerMemory: number;
+} {
   const defaults = {
     backendUrl: "http://127.0.0.1:8000",
     localCasesPath: path.join(path.dirname(app.getAppPath()), "..", "cases"),
     paraViewPath: "C:\\Program Files\\ParaView 6.0.1\\bin\\paraview.exe",
-    cores: 10,
+    cores: 4,
+    dockerCpus: 4,
+    dockerMemory: 8,
   };
 
   try {
-    const settingsPath = path.join(app.getAppPath(), "..", "settings.json");
-    if (fs.existsSync(settingsPath)) {
-      const data = JSON.parse(fs.readFileSync(settingsPath, "utf-8"));
+    const sp = settingsJsonPath();
+    if (fs.existsSync(sp)) {
+      const data = JSON.parse(fs.readFileSync(sp, "utf-8"));
       // Fix legacy localhost URLs (IPv6 breaks Docker on Windows)
       if (data.backendUrl?.includes("localhost")) {
         data.backendUrl = data.backendUrl.replace("localhost", "127.0.0.1");
@@ -29,6 +38,13 @@ function loadConfig(): { backendUrl: string; localCasesPath: string; paraViewPat
     }
   } catch {}
   return defaults;
+}
+
+function saveConfig(config: Record<string, unknown>): void {
+  const sp = settingsJsonPath();
+  const dir = path.dirname(sp);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(sp, JSON.stringify(config, null, 2), "utf-8");
 }
 
 function createWindow() {
@@ -65,8 +81,17 @@ function sendToRenderer(channel: string, ...args: any[]) {
   }
 }
 
-// ── Existing IPC handlers ─────────────────────────────────────────────
+// ── Config IPC handlers ──────────────────────────────────────────────
 ipcMain.handle("get-config", () => loadConfig());
+
+ipcMain.handle("save-config", async (_, config: Record<string, unknown>) => {
+  try {
+    saveConfig(config);
+    return { ok: true };
+  } catch (e: any) {
+    return { ok: false, error: e.message };
+  }
+});
 
 ipcMain.handle("open-paraview", async (_, casePath: string) => {
   const config = loadConfig();
@@ -221,6 +246,27 @@ ipcMain.handle("docker:ping", async () => {
     return res.ok;
   } catch {
     return false;
+  }
+});
+
+ipcMain.handle("docker:get-system-resources", () => {
+  return dockerManager.getSystemResources();
+});
+
+ipcMain.handle("docker:update-resources", async (_, config: Record<string, unknown>) => {
+  try {
+    await dockerManager.writeEnvFile(config as any);
+    await dockerManager.down();
+    const portFree = await dockerManager.checkPort(8000);
+    if (!portFree) {
+      return { ok: false, error: "Port 8000 is already in use by another process" };
+    }
+    await dockerManager.up();
+    const healthy = await dockerManager.healthCheck();
+    sendToRenderer("docker:status-change", { container: healthy ? "running" : "unhealthy" });
+    return { ok: true, healthy };
+  } catch (e: any) {
+    return { ok: false, error: e.message };
   }
 });
 

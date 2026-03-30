@@ -245,10 +245,10 @@ describe("DockerManager", () => {
   });
 
   describe("writeEnvFile()", () => {
-    it("should write correct .env content", async () => {
+    it("should write correct .env content with number types", async () => {
       const { writeFileSync } = await import("fs");
 
-      await dm.writeEnvFile({ cores: 8, dockerCpus: "6", dockerMemory: "12g" } as any);
+      await dm.writeEnvFile({ cores: 8, dockerCpus: 6, dockerMemory: 12 } as any);
 
       expect(writeFileSync).toHaveBeenCalled();
       const content = (writeFileSync as any).mock.calls[0][1] as string;
@@ -256,6 +256,28 @@ describe("DockerManager", () => {
       expect(content).toContain("DOCKER_CPUS=6");
       expect(content).toContain("DOCKER_MEMORY=12g");
       expect(content).toContain("FOAMPILOT_PORT=8000");
+    });
+
+    it("should use defaults when dockerCpus and dockerMemory are undefined", async () => {
+      const { writeFileSync } = await import("fs");
+
+      await dm.writeEnvFile({ cores: 4 } as any);
+
+      expect(writeFileSync).toHaveBeenCalled();
+      const content = (writeFileSync as any).mock.calls[0][1] as string;
+      expect(content).toContain("FOAM_CORES=4");
+      expect(content).toContain("DOCKER_CPUS=4");
+      expect(content).toContain("DOCKER_MEMORY=8g");
+    });
+  });
+
+  describe("getSystemResources()", () => {
+    it("should return cpus >= 1 and memoryGB >= 2", () => {
+      const res = dm.getSystemResources();
+      expect(res.cpus).toBeGreaterThanOrEqual(1);
+      expect(res.memoryGB).toBeGreaterThanOrEqual(2);
+      expect(Number.isInteger(res.cpus)).toBe(true);
+      expect(Number.isInteger(res.memoryGB)).toBe(true);
     });
   });
 
