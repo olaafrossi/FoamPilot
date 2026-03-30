@@ -1,0 +1,58 @@
+{
+    "name": "2D Airfoil (NACA, simpleFoam)",
+    "description": "2D airfoil at 8 deg angle of attack using Spalart-Allmaras turbulence model. Pre-meshed C-grid domain with ~10k cells. A classic validation case for lift and drag prediction.",
+    "difficulty": "beginner",
+    "solver": "simpleFoam",
+    "estimated_runtime": "1-3 minutes",
+    "learning_objectives": [
+        "Run a 2D steady-state RANS airfoil simulation",
+        "Understand freestream boundary conditions",
+        "Observe pressure distribution and lift generation on an airfoil",
+        "Post-process lift and drag coefficients"
+    ],
+    "fields": ["U", "p", "nuTilda", "nut"],
+    "physics": {
+        "domain_type": "freestream",
+        "velocity": [25.75, 3.62, 0],
+        "liftDir": [-0.139, 0.990, 0],
+        "dragDir": [0.990, 0.139, 0],
+        "pitchAxis": [0, 0, 1],
+        "CofR": [0.25, 0, 0],
+        "magUInf": 26.0,
+        "lRef": 1.0,
+        "Aref": 1.0,
+        "patchGroup": "walls"
+    },
+    "steps": {
+        "mesh": {
+            "title": "Prepare Mesh",
+            "description": "This case ships with a pre-built C-grid mesh (~10k cells). No meshing commands needed — the mesh is ready to use.",
+            "files": ["constant/polyMesh/boundary"],
+            "commands": [],
+            "tip": "The mesh is a structured C-grid wrapping around the airfoil. Check the boundary file to see the 4 patches: inlet, outlet, walls (airfoil surface), and frontAndBack (empty for 2D)."
+        },
+        "boundaries": {
+            "title": "Set Boundary Conditions",
+            "description": "Configure freestream velocity at 26 m/s with 8 deg angle of attack. The inlet and outlet use freestream-type BCs, the airfoil surface (walls) uses no-slip.",
+            "files": ["0/U", "0/p", "0/nuTilda", "0/nut"],
+            "tip": "The velocity components (25.75, 3.62, 0) give 26 m/s at 8 deg AoA. Change these to adjust speed or angle of attack. Remember to update liftDir and dragDir in forceCoeffs too."
+        },
+        "solver": {
+            "title": "Configure Solver",
+            "description": "simpleFoam with SIMPLE algorithm and Spalart-Allmaras turbulence. 500 iterations with residual-based convergence control (1e-5 threshold).",
+            "files": ["system/controlDict", "system/fvSchemes", "system/fvSolution"],
+            "tip": "The case typically converges in 200-300 iterations. Watch the residuals — all should drop below 1e-5."
+        },
+        "run": {
+            "title": "Run Simulation",
+            "description": "Execute simpleFoam. This is a small 2D case and should complete quickly.",
+            "commands": ["simpleFoam"],
+            "tip": "If residuals stall, try adjusting relaxation factors in fvSolution. For this case, p=0.3 and U=0.7 work well."
+        },
+        "postprocess": {
+            "title": "View Results",
+            "description": "Visualize pressure coefficient on the airfoil surface. Check forceCoeffs for lift (Cl) and drag (Cd) values. Expected Cl ~ 1.0-1.2 for NACA 0012 at 8 deg AoA.",
+            "tip": "In the results view, look at the pressure field. The low-pressure region on the upper surface (suction side) is what generates lift."
+        }
+    }
+}

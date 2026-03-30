@@ -1,0 +1,33 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2512                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+
+forceCoeffs1
+{
+    type            forceCoeffs;
+
+    libs            (forces);
+
+    writeControl    timeStep;
+    writeInterval   1;
+
+    log             yes;
+
+    patches         (raceCarGroup);
+    rho             rhoInf;      // Indicates incompressible
+    rhoInf          1;           // Required when rho = rhoInf
+    liftDir         (0 0 1);
+    dragDir         (1 0 0);
+    CofR            (2.0 0 0);   // Center of car
+    pitchAxis       (0 1 0);
+    magUInf         40;
+    lRef            4.0;         // Car length
+    Aref            2.0;         // Frontal area
+}
+
+
+// ************************************************************************* //

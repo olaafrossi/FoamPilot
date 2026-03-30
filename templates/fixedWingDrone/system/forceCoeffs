@@ -1,0 +1,33 @@
+/*--------------------------------*- C++ -*----------------------------------*\
+| =========                 |                                                 |
+| \\      /  F ield         | OpenFOAM: The Open Source CFD Toolbox           |
+|  \\    /   O peration     | Version:  v2512                                 |
+|   \\  /    A nd           | Website:  www.openfoam.com                      |
+|    \\/     M anipulation  |                                                 |
+\*---------------------------------------------------------------------------*/
+
+forceCoeffs1
+{
+    type            forceCoeffs;
+
+    libs            (forces);
+
+    writeControl    timeStep;
+    writeInterval   1;
+
+    log             yes;
+
+    patches         (fixedWingDroneGroup);
+    rho             rhoInf;      // Indicates incompressible
+    rhoInf          1;           // Required when rho = rhoInf
+    liftDir         (0 0 1);
+    dragDir         (1 0 0);
+    CofR            (0.15 0 0);  // Quarter-chord position
+    pitchAxis       (0 1 0);
+    magUInf         12;
+    lRef            0.8;         // Wingspan
+    Aref            0.12;        // Wing planform area
+}
+
+
+// ************************************************************************* //

@@ -1,0 +1,46 @@
+{
+    "hidden": true,
+    "name": "Backward-Facing Step (Pitz-Daily)",
+    "description": "Turbulent flow over a backward-facing step. A classic validation case for turbulence models — flow separates at the step and reattaches downstream.",
+    "difficulty": "beginner",
+    "solver": "simpleFoam",
+    "estimated_runtime": "1-2 minutes",
+    "learning_objectives": [
+        "Set up a steady-state RANS simulation",
+        "Configure inlet velocity and turbulence boundary conditions",
+        "Run simpleFoam (steady-state incompressible turbulent solver)",
+        "Understand the SIMPLE pressure-velocity coupling algorithm"
+    ],
+    "fields": ["U", "p", "k", "epsilon", "nut"],
+    "steps": {
+        "mesh": {
+            "title": "Generate Mesh",
+            "description": "Create the step geometry mesh using blockMesh. The domain includes an inlet channel, a backward-facing step, and a downstream recovery region.",
+            "files": ["system/blockMeshDict"],
+            "tip": "The mesh is finer near the step where flow separation occurs."
+        },
+        "boundaries": {
+            "title": "Set Boundary Conditions",
+            "description": "Configure velocity, pressure, and turbulence quantities (k, epsilon) at the inlet, outlet, and walls.",
+            "files": ["0/U", "0/p", "0/k", "0/epsilon", "0/nut"],
+            "tip": "The inlet uses fixedValue for U and calculated values for k and epsilon based on turbulence intensity."
+        },
+        "solver": {
+            "title": "Configure Solver",
+            "description": "Set up simpleFoam with SIMPLE algorithm settings. This is a steady-state solver — it iterates until residuals converge.",
+            "files": ["system/controlDict", "system/fvSchemes", "system/fvSolution"],
+            "tip": "For steady-state, 'endTime' is the maximum number of iterations, not physical time."
+        },
+        "run": {
+            "title": "Run Simulation",
+            "description": "Execute simpleFoam. Watch residuals — all fields should decrease below 1e-4 for a converged solution.",
+            "commands": ["simpleFoam"],
+            "tip": "If residuals oscillate, try reducing relaxation factors in fvSolution."
+        },
+        "postprocess": {
+            "title": "View Results",
+            "description": "Visualize the velocity field to see flow separation behind the step and the reattachment point downstream.",
+            "tip": "In ParaView, use a streamline or vector plot to see the recirculation zone behind the step."
+        }
+    }
+}

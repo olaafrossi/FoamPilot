@@ -1,0 +1,63 @@
+{
+    "hidden": true,
+    "name": "motorBike (simpleFoam)",
+    "description": "External aerodynamics around a motorcycle. Uses snappyHexMesh for body-fitted meshing and simpleFoam for steady-state RANS simulation. The classic OpenFOAM showcase case.",
+    "difficulty": "intermediate",
+    "solver": "simpleFoam",
+    "estimated_runtime": "5-15 minutes (serial), 2-5 minutes (6 cores)",
+    "learning_objectives": [
+        "Copy and prepare surface geometry (OBJ format)",
+        "Run surfaceFeatureExtract for edge detection",
+        "Generate background mesh with blockMesh",
+        "Refine mesh around geometry with snappyHexMesh",
+        "Run simpleFoam steady-state turbulent solver",
+        "Post-process with ParaView (pressure, velocity, streamlines)"
+    ],
+    "fields": ["U", "p", "k", "omega", "nut"],
+    "physics": {
+        "domain_type": "ground_vehicle",
+        "velocity": [20, 0, 0],
+        "turbulentKE": 0.24,
+        "turbulentOmega": 1.78,
+        "liftDir": [0, 0, 1],
+        "dragDir": [1, 0, 0],
+        "pitchAxis": [0, 1, 0],
+        "CofR": [0.72, 0, 0],
+        "magUInf": 20,
+        "lRef": 1.42,
+        "Aref": 0.75,
+        "patchGroup": "motorBikeGroup"
+    },
+    "steps": {
+        "mesh": {
+            "title": "Generate Mesh",
+            "description": "Three-step meshing: surfaceFeatureExtract detects sharp edges, blockMesh creates the background hex mesh, then snappyHexMesh refines around the motorcycle geometry.",
+            "files": ["system/blockMeshDict", "system/snappyHexMeshDict", "system/surfaceFeatureExtractDict"],
+            "commands": ["surfaceFeatureExtract", "blockMesh", "snappyHexMesh -overwrite"],
+            "tip": "snappyHexMesh reads motorBike.obj.gz from constant/triSurface/. The -overwrite flag replaces the background mesh in-place."
+        },
+        "boundaries": {
+            "title": "Set Boundary Conditions",
+            "description": "Configure inlet velocity, outlet pressure, and wall conditions for the motorcycle surfaces.",
+            "files": ["0/U", "0/p", "0/k", "0/omega", "0/nut"],
+            "tip": "The inlet uses fixedValue for U (typically 20 m/s). The motorcycle surfaces use noSlip for velocity."
+        },
+        "solver": {
+            "title": "Configure Solver",
+            "description": "Set up simpleFoam with SIMPLE algorithm. This is a steady-state solver — endTime controls the maximum number of iterations.",
+            "files": ["system/controlDict", "system/fvSchemes", "system/fvSolution"],
+            "tip": "For a quick test run, reduce endTime to 100 iterations. Full convergence typically needs 500+."
+        },
+        "run": {
+            "title": "Run Simulation",
+            "description": "Execute simpleFoam. Watch residuals — all fields should decrease below 1e-4 for convergence.",
+            "commands": ["simpleFoam"],
+            "tip": "This case takes longer than cavity. If residuals plateau, check boundary conditions and relaxation factors."
+        },
+        "postprocess": {
+            "title": "View Results",
+            "description": "Visualize pressure distribution on the motorcycle surface, velocity field around it, and streamlines showing the wake.",
+            "tip": "In ParaView: apply 'Extract Block' to select motorcycle surfaces, then color by pressure. Use 'Stream Tracer' for flow visualization."
+        }
+    }
+}

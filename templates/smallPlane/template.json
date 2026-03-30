@@ -1,0 +1,63 @@
+{
+    "name": "Small Plane (simpleFoam)",
+    "description": "External aerodynamics for a light aircraft in freestream flow. Uses snappyHexMesh for body-fitted meshing and simpleFoam for steady-state RANS simulation. No ground plane — the geometry floats in open air with slip conditions on all domain boundaries.",
+    "difficulty": "intermediate",
+    "solver": "simpleFoam",
+    "estimated_runtime": "10-30 minutes (serial), 3-10 minutes (6 cores)",
+    "learning_objectives": [
+        "Copy and prepare surface geometry (STL/OBJ format)",
+        "Run surfaceFeatureExtract for edge detection",
+        "Generate background mesh with blockMesh",
+        "Refine mesh around geometry with snappyHexMesh",
+        "Configure freestream boundary conditions (slip on all domain faces)",
+        "Run simpleFoam steady-state turbulent solver",
+        "Post-process lift and drag coefficients with forceCoeffs"
+    ],
+    "fields": ["U", "p", "k", "omega", "nut"],
+    "physics": {
+        "domain_type": "freestream",
+        "velocity": [30, 0, 0],
+        "turbulentKE": 0.135,
+        "turbulentOmega": 13.4,
+        "liftDir": [0, 0, 1],
+        "dragDir": [1, 0, 0],
+        "pitchAxis": [0, 1, 0],
+        "CofR": [0.5, 0, 0],
+        "magUInf": 30,
+        "lRef": 2.0,
+        "Aref": 1.5,
+        "patchGroup": "smallPlaneGroup"
+    },
+    "steps": {
+        "mesh": {
+            "title": "Generate Mesh",
+            "description": "Three-step meshing: surfaceFeatureExtract detects sharp edges, blockMesh creates the background hex mesh, then snappyHexMesh refines around the aircraft geometry. The domain should extend far enough in all directions to avoid blockage effects.",
+            "files": ["system/blockMeshDict", "system/snappyHexMeshDict", "system/surfaceFeatureExtractDict"],
+            "commands": ["surfaceFeatureExtract", "blockMesh", "snappyHexMesh -overwrite"],
+            "tip": "For aircraft, the domain should extend at least 10 chord lengths upstream, 20 downstream, and 10 in all lateral directions to minimise far-field boundary influence."
+        },
+        "boundaries": {
+            "title": "Set Boundary Conditions",
+            "description": "Configure freestream boundary conditions. All domain faces (top, bottom, front, back) use slip — there is no ground plane. Only the aircraft surfaces use no-slip wall conditions.",
+            "files": ["0/U", "0/p", "0/k", "0/omega", "0/nut"],
+            "tip": "Unlike ground vehicle cases, lowerWall uses slip (not wall) because the aircraft is in freestream. The inlet fixes velocity at 30 m/s and the outlet uses inletOutlet."
+        },
+        "solver": {
+            "title": "Configure Solver",
+            "description": "Set up simpleFoam with SIMPLE algorithm. This is a steady-state solver — endTime controls the maximum number of iterations.",
+            "files": ["system/controlDict", "system/fvSchemes", "system/fvSolution"],
+            "tip": "For a quick test run, reduce endTime to 200 iterations. Full convergence typically needs 500+ iterations for aircraft with complex wake and tip vortices."
+        },
+        "run": {
+            "title": "Run Simulation",
+            "description": "Execute simpleFoam. Watch residuals — all fields should decrease below 1e-4 for convergence. Monitor lift and drag coefficients for convergence.",
+            "commands": ["simpleFoam"],
+            "tip": "Lift coefficient (Cl) may take 300+ iterations to stabilise. Check both residuals and Cl/Cd convergence before stopping."
+        },
+        "postprocess": {
+            "title": "View Results",
+            "description": "Visualise pressure distribution on the aircraft surface, velocity field around the wing, and wake structure. Check forceCoeffs output for lift and drag values (positive Cl = upward lift).",
+            "tip": "In ParaView: apply 'Extract Block' to select aircraft surfaces, then colour by pressure coefficient. Use a cutting plane at y=0 to visualise the symmetry plane flow field and check for separation."
+        }
+    }
+}

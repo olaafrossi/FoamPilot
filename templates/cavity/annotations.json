@@ -1,0 +1,59 @@
+{
+    "system/blockMeshDict": {
+        "description": "Defines the mesh geometry and resolution. blockMesh reads this file to create the computational grid.",
+        "annotations": {
+            "vertices": "The 8 corners of the cavity box. Units are meters. The cavity is 1m x 1m x 0.1m (quasi-2D).",
+            "blocks": "hex(...) defines a hexahedral block. (20 20 1) means 20 cells in X, 20 in Y, 1 in Z. simpleGrading (1 1 1) means uniform cell sizes.",
+            "boundary.movingWall": "The top wall that moves — this drives the cavity flow. Type 'wall' means it's a solid surface.",
+            "boundary.fixedWalls": "The three stationary walls (left, right, bottom). Also type 'wall'.",
+            "boundary.frontAndBack": "The front and back faces. Type 'empty' because this is a 2D simulation — no flow in the Z direction."
+        }
+    },
+    "0/U": {
+        "description": "Velocity field initial and boundary conditions.",
+        "annotations": {
+            "dimensions": "[0 1 -1 0 0 0 0] means meters per second (m/s). OpenFOAM uses dimensional checking.",
+            "internalField": "Initial velocity everywhere inside the domain. (0 0 0) = fluid starts at rest.",
+            "boundaryField.movingWall": "fixedValue (1 0 0) = the lid moves at 1 m/s in the X direction. This is what drives the entire flow.",
+            "boundaryField.fixedWalls": "noSlip = zero velocity at solid walls. This is the most common wall boundary condition.",
+            "boundaryField.frontAndBack": "empty = no flow in the Z direction (2D simulation)."
+        }
+    },
+    "0/p": {
+        "description": "Pressure field initial and boundary conditions.",
+        "annotations": {
+            "dimensions": "[0 2 -2 0 0 0 0] means m²/s² (kinematic pressure, divided by density).",
+            "internalField": "Initial pressure is zero everywhere. For incompressible flow, only pressure differences matter.",
+            "boundaryField.movingWall": "zeroGradient = no pressure gradient normal to the wall. Standard for walls in incompressible flow.",
+            "boundaryField.fixedWalls": "zeroGradient = same as movingWall.",
+            "boundaryField.frontAndBack": "empty = 2D simulation."
+        }
+    },
+    "system/controlDict": {
+        "description": "Controls the simulation: which solver to run, how long, and when to save results.",
+        "annotations": {
+            "application": "The solver to run. icoFoam = incompressible, laminar, transient Navier-Stokes.",
+            "startTime": "When the simulation starts (in seconds). Usually 0.",
+            "endTime": "When the simulation stops. 0.5 seconds is enough for this cavity to reach steady state.",
+            "deltaT": "Time step size. 0.005s gives a Courant number < 1 for this mesh and velocity.",
+            "writeInterval": "How often to save results. 0.1 means every 0.1 seconds of simulation time."
+        }
+    },
+    "system/fvSchemes": {
+        "description": "Numerical discretization schemes — how equations are approximated on the mesh.",
+        "annotations": {
+            "ddtSchemes": "Time derivative scheme. Euler = first-order implicit. Stable and simple.",
+            "gradSchemes": "Gradient calculation. Gauss linear = second-order, cell-to-face interpolation.",
+            "divSchemes": "Divergence (convection) schemes. Gauss linear for the velocity convection term.",
+            "laplacianSchemes": "Diffusion schemes. Gauss linear corrected = second-order with non-orthogonal correction."
+        }
+    },
+    "system/fvSolution": {
+        "description": "Linear solver settings — how the matrix equations are solved each time step.",
+        "annotations": {
+            "solvers.p": "Pressure solver: PCG (conjugate gradient) with DIC preconditioner. tolerance 1e-06.",
+            "solvers.U": "Velocity solver: PBiCG (bi-conjugate gradient) with DILU preconditioner. tolerance 1e-05.",
+            "PISO": "Pressure-velocity coupling algorithm. nCorrectors=2 means 2 pressure correction steps per time step."
+        }
+    }
+}

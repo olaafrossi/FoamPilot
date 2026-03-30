@@ -418,8 +418,8 @@ FodyWeavers.xsd
 *.msm
 *.msp
 
-# OpenFoam Templates
-templates/
+# OpenFOAM bundled tutorials (shipped with openfoam2512-default)
+templates/tutorials/
 # OpenFoam Cases
 cases/
 .gstack/

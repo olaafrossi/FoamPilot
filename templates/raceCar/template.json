@@ -1,0 +1,63 @@
+{
+    "name": "Race Car (simpleFoam)",
+    "description": "External aerodynamics around a race car with ground effect. Uses snappyHexMesh for body-fitted meshing and simpleFoam for steady-state RANS simulation. Features a moving ground plane to simulate road motion and captures downforce-critical underbody flow.",
+    "difficulty": "intermediate",
+    "solver": "simpleFoam",
+    "estimated_runtime": "10-30 minutes (serial), 3-10 minutes (6 cores)",
+    "learning_objectives": [
+        "Copy and prepare surface geometry (STL/OBJ format)",
+        "Run surfaceFeatureExtract for edge detection",
+        "Generate background mesh with blockMesh",
+        "Refine mesh around geometry with snappyHexMesh",
+        "Configure moving ground plane for road simulation",
+        "Run simpleFoam steady-state turbulent solver",
+        "Post-process drag and downforce coefficients with forceCoeffs"
+    ],
+    "fields": ["U", "p", "k", "omega", "nut"],
+    "physics": {
+        "domain_type": "ground_vehicle",
+        "velocity": [40, 0, 0],
+        "turbulentKE": 6.0,
+        "turbulentOmega": 44.7,
+        "liftDir": [0, 0, 1],
+        "dragDir": [1, 0, 0],
+        "pitchAxis": [0, 1, 0],
+        "CofR": [2.0, 0, 0],
+        "magUInf": 40,
+        "lRef": 4.0,
+        "Aref": 2.0,
+        "patchGroup": "raceCarGroup"
+    },
+    "steps": {
+        "mesh": {
+            "title": "Generate Mesh",
+            "description": "Three-step meshing: surfaceFeatureExtract detects sharp edges, blockMesh creates the background hex mesh, then snappyHexMesh refines around the car geometry with extra refinement near the ground plane for underbody flow.",
+            "files": ["system/blockMeshDict", "system/snappyHexMeshDict", "system/surfaceFeatureExtractDict"],
+            "commands": ["surfaceFeatureExtract", "blockMesh", "snappyHexMesh -overwrite"],
+            "tip": "Ensure sufficient refinement between the car underbody and ground plane (at least 4-5 cells) to resolve the ground effect properly."
+        },
+        "boundaries": {
+            "title": "Set Boundary Conditions",
+            "description": "Configure inlet velocity at 40 m/s, outlet pressure, moving ground (lowerWall), and no-slip walls for the car surfaces. The ground uses movingWallVelocity to match freestream speed.",
+            "files": ["0/U", "0/p", "0/k", "0/omega", "0/nut"],
+            "tip": "The lowerWall uses movingWallVelocity at freestream speed (40 m/s) to eliminate the ground boundary layer and simulate real road conditions."
+        },
+        "solver": {
+            "title": "Configure Solver",
+            "description": "Set up simpleFoam with SIMPLE algorithm. This is a steady-state solver — endTime controls the maximum number of iterations.",
+            "files": ["system/controlDict", "system/fvSchemes", "system/fvSolution"],
+            "tip": "For a quick test run, reduce endTime to 200 iterations. Full convergence typically needs 500+ iterations due to the complex wake structure."
+        },
+        "run": {
+            "title": "Run Simulation",
+            "description": "Execute simpleFoam. Watch residuals — all fields should decrease below 1e-4 for convergence. Monitor force coefficients for convergence of drag and downforce.",
+            "commands": ["simpleFoam"],
+            "tip": "Force coefficients may take 300+ iterations to stabilize. Check both residuals and Cd/Cl convergence before stopping."
+        },
+        "postprocess": {
+            "title": "View Results",
+            "description": "Visualize pressure distribution on the car surface, velocity field in the underbody region, and wake structure. Check forceCoeffs output for drag and downforce values (negative Cl = downforce).",
+            "tip": "In ParaView: apply 'Extract Block' to select car surfaces, then color by pressure. Use a cutting plane at y=0 to visualize the symmetry plane flow field."
+        }
+    }
+}
