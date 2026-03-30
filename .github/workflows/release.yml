@@ -42,6 +42,14 @@ jobs:
         working-directory: electron-ui
         run: npm ci
 
+      - name: Stamp version from tag into package.json
+        if: github.ref_type == 'tag'
+        working-directory: electron-ui
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+
       - name: Build Electron app
         working-directory: electron-ui
         run: npm run build:electron

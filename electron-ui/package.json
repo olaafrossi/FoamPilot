@@ -1,6 +1,6 @@
 {
   "name": "foampilot",
-  "version": "1.0.0",
+  "version": "0.0.1",
   "description": "Aerodynamics made simple — guided OpenFOAM simulations",
   "main": "electron-dist/main.js",
   "scripts": {
