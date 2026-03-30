@@ -7,7 +7,16 @@
       "Read(//c/Users/OlaafRossi/.nuget/packages/uno.extensions.reactive.winui/**)",
       "Bash(dotnet-ildasm Uno.Extensions.Reactive.dll)",
       "Bash(grep -r ForEachAsync /c/Users/OlaafRossi/.nuget/packages/uno.extensions.reactive/7.1.1/ --include=*.xml)",
-      "Bash(grep -r Combine /c/Users/OlaafRossi/.nuget/packages/uno.extensions.reactive/7.1.1/ --include=*.xml)"
+      "Bash(grep -r Combine /c/Users/OlaafRossi/.nuget/packages/uno.extensions.reactive/7.1.1/ --include=*.xml)",
+      "Bash(xargs ls:*)",
+      "Bash(find /c/dev/FoamPilot -name *.sh -o -name entrypoint* -o -name *.env*)",
+      "Bash(python -m pytest tests/test_config_generator.py -v)",
+      "Bash(npx tsc:*)",
+      "Bash(python -m pytest tests/test_config_generator.py -v --tb=short)",
+      "Bash(done)",
+      "Bash(cp:*)",
+      "Bash(# Copy 0.orig -> 0 so the template has the BC files where expected\ncp -r /c/dev/FoamPilot/templates/airFoil2D/0.orig /c/dev/FoamPilot/templates/airFoil2D/0 && \\\\\n# Copy polyMesh.orig -> polyMesh so the mesh is where expected\ncp -r /c/dev/FoamPilot/templates/airFoil2D/constant/polyMesh.orig /c/dev/FoamPilot/templates/airFoil2D/constant/polyMesh && \\\\\necho \"Done\")",
+      "Bash(python:*)"
     ]
   }
 }

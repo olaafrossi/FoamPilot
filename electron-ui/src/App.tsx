@@ -1,7 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
 import { Rocket, FolderOpen, LayoutDashboard, Terminal, FileText, Settings, Upload, RotateCw } from "lucide-react";
-import { setConfig } from "./api";
+import { setConfig, syncCoresFromBackend } from "./api";
 import type { AppConfig } from "./types";
 import { StatusProvider, useStatus } from "./hooks/useStatus";
 import { useBackendStatus } from "./hooks/useBackendStatus";
@@ -450,6 +450,13 @@ export default function App() {
       setConfig(defaults);
       setAppConfig(defaults);
     }
+
+    // Sync cores from backend once it's reachable
+    syncCoresFromBackend().then((cores) => {
+      if (cores !== null) {
+        setAppConfig((prev) => prev ? { ...prev, cores } : prev);
+      }
+    });
 
     // Check Docker status on mount — if backend is already healthy, skip setup
     if (window.foamPilot?.docker) {

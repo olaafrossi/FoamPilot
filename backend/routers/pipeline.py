@@ -259,6 +259,10 @@ def _scan_template_dir(tpl_dir: Path, source: str) -> list[TemplateInfo]:
             except (json.JSONDecodeError, OSError):
                 pass
 
+        # Skip hidden templates (still usable as scaffolds, just not listed)
+        if meta.get("hidden", False):
+            continue
+
         # Check if it's a valid template (has case/system or system dir)
         case_dir = entry / "case" if (entry / "case").is_dir() else entry
         if not (case_dir / "system").is_dir():
@@ -282,9 +286,12 @@ def _scan_template_dir(tpl_dir: Path, source: str) -> list[TemplateInfo]:
         domain_type = physics.get("domain_type", "")
         solver = meta.get("solver", "")
 
-        # Detect if sample geometry exists
+        # Detect if sample geometry exists (triSurface for STL/OBJ, or polyMesh for pre-meshed cases)
         tri_dir = case_dir / "constant" / "triSurface"
-        has_geometry = tri_dir.is_dir() and any(tri_dir.iterdir()) if tri_dir.is_dir() else False
+        poly_dir = case_dir / "constant" / "polyMesh"
+        has_tri = tri_dir.is_dir() and any(tri_dir.iterdir()) if tri_dir.is_dir() else False
+        has_poly = poly_dir.is_dir() and any(poly_dir.iterdir()) if poly_dir.is_dir() else False
+        has_geometry = has_tri or has_poly
 
         # Categorize: external aero vs learning
         category = "learning" if solver in _LEARNING_SOLVERS else "aero"

@@ -50,16 +50,24 @@ jobs:
           - os: ubuntu-latest
             artifact: linux
     runs-on: ${{ matrix.os }}
-    if: >-
-      inputs.platforms == 'all' ||
-      (inputs.platforms == 'windows' && matrix.artifact == 'windows') ||
-      (inputs.platforms == 'macos'   && matrix.artifact == 'macos') ||
-      (inputs.platforms == 'linux'   && matrix.artifact == 'linux')
 
     steps:
+      - name: Check platform filter
+        id: filter
+        shell: bash
+        run: |
+          if [[ "${{ inputs.platforms }}" == "all" || "${{ inputs.platforms }}" == "${{ matrix.artifact }}" ]]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "Skipping ${{ matrix.artifact }} (requested: ${{ inputs.platforms }})"
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.filter.outputs.skip == 'false'
 
       - name: Setup Node.js
+        if: steps.filter.outputs.skip == 'false'
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -67,21 +75,25 @@ jobs:
           cache-dependency-path: electron-ui/package-lock.json
 
       - name: Install dependencies
+        if: steps.filter.outputs.skip == 'false'
         working-directory: electron-ui
         run: npm ci
 
       - name: Stamp version in package.json
+        if: steps.filter.outputs.skip == 'false'
         working-directory: electron-ui
         shell: bash
         run: npm version "${{ inputs.version }}" --no-git-tag-version --allow-same-version
 
       - name: Build Electron app
+        if: steps.filter.outputs.skip == 'false'
         working-directory: electron-ui
         run: npm run build:electron
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Upload artifacts
+        if: steps.filter.outputs.skip == 'false'
         uses: actions/upload-artifact@v4
         with:
           name: electron-${{ matrix.artifact }}

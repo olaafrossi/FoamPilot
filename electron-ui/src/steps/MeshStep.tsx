@@ -61,6 +61,18 @@ export default function MeshStep({
   const stopwatch = useStopwatch();
   const { setWorking, setElapsed } = useStatus();
 
+  // Pre-meshed detection: case already has constant/polyMesh
+  const [preMeshed, setPreMeshed] = useState(false);
+
+  useEffect(() => {
+    if (!caseName) return;
+    let cancelled = false;
+    readFile(caseName, "constant/polyMesh/boundary")
+      .then(() => { if (!cancelled) setPreMeshed(true); })
+      .catch(() => { if (!cancelled) setPreMeshed(false); });
+    return () => { cancelled = true; };
+  }, [caseName]);
+
   // Suggestions state
   const [meshSuggestion, setMeshSuggestion] = useState<MeshSuggestion | null>(null);
   const [yPlusResult, setYPlusResult] = useState<YPlusResult | null>(null);
@@ -269,6 +281,57 @@ export default function MeshStep({
     }
   };
 
+  const verifyPreMesh = async () => {
+    if (!caseName) return;
+    setError(null);
+    setRunning(true);
+    setLogLines([]);
+    setMeshQuality(null);
+    stopwatch.start();
+
+    try {
+      const job = await runCommands(caseName, ["checkMesh"]);
+      setCurrentJobId(job.job_id);
+      const ws = connectLogs(job.job_id, (line) => {
+        setLogLines((prev) => [...prev, line]);
+      });
+      wsRef.current = ws;
+
+      const poll = setInterval(async () => {
+        try {
+          const status = await getJobStatus(job.job_id);
+          if (
+            status.status === "completed" ||
+            status.status === "failed" ||
+            status.status === "cancelled"
+          ) {
+            clearInterval(poll);
+            setRunning(false);
+            setCurrentJobId(null);
+            stopwatch.stop();
+            ws.close();
+            wsRef.current = null;
+
+            if (status.status === "completed") {
+              setMeshDone(true);
+              try {
+                const quality = await getMeshQuality(caseName);
+                setMeshQuality(quality);
+              } catch {}
+            } else {
+              setError("checkMesh failed. Check the log output.");
+            }
+          }
+        } catch {}
+      }, 2000);
+    } catch (e: unknown) {
+      setRunning(false);
+      setCurrentJobId(null);
+      stopwatch.stop();
+      setError(e instanceof Error ? e.message : "Failed to run checkMesh");
+    }
+  };
+
   const handleCancel = async () => {
     if (currentJobId) {
       try { await cancelJob(currentJobId); } catch {}
@@ -294,15 +357,40 @@ export default function MeshStep({
     <div>
       <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 4, color: "var(--fg)", fontFamily: "var(--font-display)" }}>Mesh</h2>
       <p style={{ color: "var(--fg-muted)", fontSize: 13, marginBottom: 24 }}>
-        Edit mesh dictionaries, then generate the computational mesh.
+        {preMeshed
+          ? "This case includes a pre-built mesh. Verify it with checkMesh, then continue."
+          : "Edit mesh dictionaries, then generate the computational mesh."
+        }
       </p>
 
       {error && (
         <div style={{ color: "var(--error)", fontSize: 13, marginBottom: 16 }}>{error}</div>
       )}
 
+      {/* Pre-meshed info banner */}
+      {preMeshed && !meshDone && !running && (
+        <div
+          className="p-4 mb-4 flex items-start gap-3"
+          style={{
+            background: "rgba(34, 197, 94, 0.06)",
+            border: "1px solid rgba(34, 197, 94, 0.3)",
+          }}
+        >
+          <Lightbulb size={16} className="shrink-0 mt-0.5" style={{ color: "var(--success)" }} />
+          <div>
+            <p className="text-[13px] font-semibold mb-1" style={{ color: "var(--fg)" }}>
+              Pre-built mesh detected
+            </p>
+            <p className="text-[12px]" style={{ color: "var(--fg-muted)" }}>
+              This case ships with a ready-to-use mesh. Click "Verify Mesh" to run checkMesh
+              and confirm quality, then proceed to boundary conditions.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Suggestion banner */}
-      {meshSuggestion && !suggestionApplied && (
+      {!preMeshed && meshSuggestion && !suggestionApplied && (
         <div
           className="p-4 mb-4 flex items-start gap-3"
           style={{
@@ -344,7 +432,7 @@ export default function MeshStep({
         </div>
       )}
 
-      {suggestionApplied && (
+      {!preMeshed && suggestionApplied && (
         <div
           className="p-3 mb-4 text-[12px]"
           style={{ background: "rgba(34, 197, 94, 0.08)", border: "1px solid rgba(34, 197, 94, 0.3)", color: "var(--success)" }}
@@ -354,7 +442,7 @@ export default function MeshStep({
       )}
 
       {/* y+ calculator widget */}
-      {yPlusResult && (
+      {!preMeshed && yPlusResult && (
         <div
           className="p-4 mb-4"
           style={{ background: "var(--bg-surface)", border: "1px solid var(--border)" }}
@@ -397,51 +485,55 @@ export default function MeshStep({
         </div>
       )}
 
-      {/* Tab bar */}
-      <div
-        className="flex mb-4"
-        style={{ height: 35, background: "var(--bg-tab-inactive)", borderBottom: "1px solid var(--border)" }}
-      >
-        {MESH_FILES.map((f, idx) => (
-          <button
-            key={f.key}
-            onClick={() => handleTabChange(idx)}
-            className="px-4 text-[13px] transition-colors"
-            style={{
-              height: 35,
-              display: "flex",
-              alignItems: "center",
-              background: idx === activeTab ? "var(--bg-editor)" : "var(--bg-tab-inactive)",
-              color: idx === activeTab ? "var(--fg)" : "var(--fg-muted)",
-              borderTop: idx === activeTab ? "2px solid var(--border-tab-active)" : "2px solid transparent",
-              borderRadius: 0,
-              borderLeft: "none",
-              borderRight: "none",
-              borderBottom: "none",
-            }}
+      {/* Tab bar + editor (only for cases that need mesh generation) */}
+      {!preMeshed && (
+        <>
+          <div
+            className="flex mb-4"
+            style={{ height: 35, background: "var(--bg-tab-inactive)", borderBottom: "1px solid var(--border)" }}
           >
-            {f.label}
-          </button>
-        ))}
-      </div>
+            {MESH_FILES.map((f, idx) => (
+              <button
+                key={f.key}
+                onClick={() => handleTabChange(idx)}
+                className="px-4 text-[13px] transition-colors"
+                style={{
+                  height: 35,
+                  display: "flex",
+                  alignItems: "center",
+                  background: idx === activeTab ? "var(--bg-editor)" : "var(--bg-tab-inactive)",
+                  color: idx === activeTab ? "var(--fg)" : "var(--fg-muted)",
+                  borderTop: idx === activeTab ? "2px solid var(--border-tab-active)" : "2px solid transparent",
+                  borderRadius: 0,
+                  borderLeft: "none",
+                  borderRight: "none",
+                  borderBottom: "none",
+                }}
+              >
+                {f.label}
+              </button>
+            ))}
+          </div>
 
-      {/* Editor */}
-      {loading ? (
-        <div className="h-[400px] flex items-center justify-center" style={{ color: "var(--fg-muted)" }}>
-          Loading files...
-        </div>
-      ) : (
-        <FoamEditor
-          height="400px"
-          value={fileContents[currentFile.key] ?? ""}
-          onChange={handleEditorChange}
-        />
+          {/* Editor */}
+          {loading ? (
+            <div className="h-[400px] flex items-center justify-center" style={{ color: "var(--fg-muted)" }}>
+              Loading files...
+            </div>
+          ) : (
+            <FoamEditor
+              height="400px"
+              value={fileContents[currentFile.key] ?? ""}
+              onChange={handleEditorChange}
+            />
+          )}
+        </>
       )}
 
-      {/* Generate Mesh / Cancel buttons */}
+      {/* Generate Mesh / Verify Mesh / Cancel buttons */}
       <div className="mt-4 flex gap-3">
         <button
-          onClick={generateMesh}
+          onClick={preMeshed ? verifyPreMesh : generateMesh}
           disabled={running || !caseName}
           className="px-6 py-2 rounded-sm font-semibold text-[13px]"
           style={
@@ -456,7 +548,10 @@ export default function MeshStep({
             if (!running) (e.currentTarget as HTMLButtonElement).style.background = "var(--accent)";
           }}
         >
-          {running ? "Generating Mesh..." : "Generate Mesh"}
+          {running
+            ? (preMeshed ? "Verifying Mesh..." : "Generating Mesh...")
+            : (preMeshed ? "Verify Mesh" : "Generate Mesh")
+          }
         </button>
         {running && (
           <button
@@ -561,18 +656,18 @@ export default function MeshStep({
         </button>
         <button
           onClick={handleNext}
-          disabled={!meshQuality}
+          disabled={!meshQuality && !preMeshed}
           className="px-6 py-2 rounded-sm font-semibold text-[13px]"
           style={
-            meshQuality
+            (meshQuality || preMeshed)
               ? { background: "var(--accent)", color: "#09090B" }
               : { background: "var(--bg-elevated)", color: "var(--fg-disabled)", cursor: "not-allowed" }
           }
           onMouseEnter={(e) => {
-            if (meshQuality) (e.currentTarget as HTMLButtonElement).style.background = "var(--accent-hover)";
+            if (meshQuality || preMeshed) (e.currentTarget as HTMLButtonElement).style.background = "var(--accent-hover)";
           }}
           onMouseLeave={(e) => {
-            if (meshQuality) (e.currentTarget as HTMLButtonElement).style.background = "var(--accent)";
+            if (meshQuality || preMeshed) (e.currentTarget as HTMLButtonElement).style.background = "var(--accent)";
           }}
         >
           Next &rarr;

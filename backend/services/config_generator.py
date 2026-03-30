@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import re as _re_module
 import struct
 from dataclasses import dataclass
 from pathlib import Path
@@ -212,6 +213,150 @@ def _scale_ascii_stl(raw: bytes, factor: float) -> bytes:
 
 
 # ---------------------------------------------------------------------------
+# STL rotation / translation — align geometry to simulation axes
+# ---------------------------------------------------------------------------
+
+def _rotation_matrix(
+    rx: float, ry: float, rz: float
+) -> list[list[float]]:
+    """Build a 3×3 rotation matrix from Euler angles (degrees) in XYZ order."""
+    ax, ay, az = math.radians(rx), math.radians(ry), math.radians(rz)
+    cx, sx = math.cos(ax), math.sin(ax)
+    cy, sy = math.cos(ay), math.sin(ay)
+    cz, sz = math.cos(az), math.sin(az)
+    return [
+        [cy * cz, sx * sy * cz - cx * sz, cx * sy * cz + sx * sz],
+        [cy * sz, sx * sy * sz + cx * cz, cx * sy * sz - sx * cz],
+        [-sy, sx * cy, cx * cy],
+    ]
+
+
+def _apply_matrix(
+    m: list[list[float]], x: float, y: float, z: float
+) -> tuple[float, float, float]:
+    """Multiply a 3×3 matrix by a column vector."""
+    return (
+        m[0][0] * x + m[0][1] * y + m[0][2] * z,
+        m[1][0] * x + m[1][1] * y + m[1][2] * z,
+        m[2][0] * x + m[2][1] * y + m[2][2] * z,
+    )
+
+
+def transform_stl(
+    raw: bytes,
+    rotate_x: float = 0.0,
+    rotate_y: float = 0.0,
+    rotate_z: float = 0.0,
+    translate_x: float = 0.0,
+    translate_y: float = 0.0,
+    translate_z: float = 0.0,
+) -> bytes:
+    """Rotate and translate all vertex positions and normals in an STL file.
+
+    Rotation is applied first (in XYZ Euler order, degrees), then translation.
+    Both vertices and normals are rotated; only vertices are translated.
+    Handles binary and ASCII formats.
+    """
+    has_rotation = abs(rotate_x) > 1e-9 or abs(rotate_y) > 1e-9 or abs(rotate_z) > 1e-9
+    has_translation = abs(translate_x) > 1e-9 or abs(translate_y) > 1e-9 or abs(translate_z) > 1e-9
+    if not has_rotation and not has_translation:
+        return raw
+    rot = _rotation_matrix(rotate_x, rotate_y, rotate_z) if has_rotation else None
+    tx, ty, tz = translate_x, translate_y, translate_z
+    if _is_ascii_stl(raw):
+        return _transform_ascii_stl(raw, rot, tx, ty, tz)
+    return _transform_binary_stl(raw, rot, tx, ty, tz)
+
+
+def _transform_binary_stl(
+    raw: bytes,
+    rot: list[list[float]] | None,
+    tx: float, ty: float, tz: float,
+) -> bytes:
+    """Transform vertex positions and normals in a binary STL."""
+    if len(raw) < 84:
+        raise ValueError("File too small to be a valid binary STL")
+
+    num_triangles = struct.unpack_from("<I", raw, 80)[0]
+    out = bytearray(raw)
+    offset = 84
+
+    for _ in range(num_triangles):
+        if offset + 50 > len(out):
+            break
+        # Rotate normal (3 floats at offset)
+        if rot is not None:
+            nx = struct.unpack_from("<f", out, offset)[0]
+            ny = struct.unpack_from("<f", out, offset + 4)[0]
+            nz = struct.unpack_from("<f", out, offset + 8)[0]
+            rnx, rny, rnz = _apply_matrix(rot, nx, ny, nz)
+            struct.pack_into("<f", out, offset, rnx)
+            struct.pack_into("<f", out, offset + 4, rny)
+            struct.pack_into("<f", out, offset + 8, rnz)
+
+        # Transform 3 vertices (9 floats starting at offset+12)
+        for v in range(3):
+            base = offset + 12 + v * 12
+            vx = struct.unpack_from("<f", out, base)[0]
+            vy = struct.unpack_from("<f", out, base + 4)[0]
+            vz = struct.unpack_from("<f", out, base + 8)[0]
+            if rot is not None:
+                vx, vy, vz = _apply_matrix(rot, vx, vy, vz)
+            struct.pack_into("<f", out, base, vx + tx)
+            struct.pack_into("<f", out, base + 4, vy + ty)
+            struct.pack_into("<f", out, base + 8, vz + tz)
+        offset += 50
+
+    return bytes(out)
+
+
+def _transform_ascii_stl(
+    raw: bytes,
+    rot: list[list[float]] | None,
+    tx: float, ty: float, tz: float,
+) -> bytes:
+    """Transform vertex positions and normals in an ASCII STL."""
+    text = raw.decode("utf-8", errors="replace")
+
+    _normal_re = _re_module.compile(
+        r"(facet\s+normal\s+)"
+        r"([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)"
+        r"(\s+)"
+        r"([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)"
+        r"(\s+)"
+        r"([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)"
+    )
+
+    _vertex_re = _re_module.compile(
+        r"(vertex\s+)"
+        r"([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)"
+        r"(\s+)"
+        r"([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)"
+        r"(\s+)"
+        r"([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)"
+    )
+
+    def _repl_normal(m: _re_module.Match) -> str:
+        nx, ny, nz = float(m.group(2)), float(m.group(4)), float(m.group(6))
+        if rot is not None:
+            nx, ny, nz = _apply_matrix(rot, nx, ny, nz)
+        return f"{m.group(1)}{nx:e}{m.group(3)}{ny:e}{m.group(5)}{nz:e}"
+
+    def _repl_vertex(m: _re_module.Match) -> str:
+        vx, vy, vz = float(m.group(2)), float(m.group(4)), float(m.group(6))
+        if rot is not None:
+            vx, vy, vz = _apply_matrix(rot, vx, vy, vz)
+        vx += tx
+        vy += ty
+        vz += tz
+        return f"{m.group(1)}{vx:e}{m.group(3)}{vy:e}{m.group(5)}{vz:e}"
+
+    text = _normal_re.sub(_repl_normal, text)
+    text = _vertex_re.sub(_repl_vertex, text)
+    return text.encode("utf-8")
+
+
+# ---------------------------------------------------------------------------
 # OpenFOAM header
 # ---------------------------------------------------------------------------
 
@@ -251,8 +396,8 @@ def generate_block_mesh_dict(
     """Generate blockMeshDict string sized to the geometry bounding box.
 
     All simulations use symmetric STL geometries (half-model), so the
-    domain is built for the positive-Y half only with a symmetryPlane
-    boundary at Y = 0.
+    domain is built for the positive-Y half only with a symmetry
+    boundary (symWall) at Y = 0.
 
     Domain sizing rules (ground_vehicle):
       - 5x geometry length upstream, 15x downstream (X direction)
@@ -324,15 +469,15 @@ edges
 
 boundary
 (
-    symmetryPlane
+    symWall
     {{
-        type symmetryPlane;
+        type symmetry;
         faces
         (
-            (0 4 5 1)
+            (1 5 4 0)
         );
     }}
-    side
+    left
     {{
         type patch;
         faces
@@ -622,13 +767,13 @@ method          scotch;
 # Keys are patch names produced by generate_block_mesh_dict; values map
 # OpenFOAM field class to the BC entry text.
 _PATCH_DEFAULTS: dict[str, dict[str, str]] = {
-    "side": {
+    "left": {
         "volScalarField": "        type            zeroGradient;",
         "volVectorField": "        type            zeroGradient;",
     },
-    "symmetryPlane": {
-        "volScalarField": "        type            symmetryPlane;",
-        "volVectorField": "        type            symmetryPlane;",
+    "symWall": {
+        "volScalarField": "        type            symmetry;",
+        "volVectorField": "        type            symmetry;",
     },
     "upperWall": {
         "volScalarField": "        type            zeroGradient;",
@@ -637,7 +782,7 @@ _PATCH_DEFAULTS: dict[str, dict[str, str]] = {
 }
 
 # All patches that blockMeshDict creates for ground_vehicle domain
-BLOCK_MESH_PATCHES = ["symmetryPlane", "side", "inlet", "outlet", "lowerWall", "upperWall"]
+BLOCK_MESH_PATCHES = ["symWall", "left", "inlet", "outlet", "lowerWall", "upperWall"]
 
 
 def _detect_field_class(text: str) -> str:

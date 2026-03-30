@@ -13,6 +13,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 from services.config_generator import (
     ensure_patches_in_bc_files,
@@ -22,6 +23,7 @@ from services.config_generator import (
     generate_surface_feature_extract_dict,
     scale_stl,
     stl_bounds,
+    transform_stl,
 )
 from services.foam_runner import FOAM_CORES, FOAM_RUN, FOAM_TEMPLATES, validate_case_path
 from services.field_parser import (
@@ -209,6 +211,99 @@ async def upload_geometry(
         "triangles": None,
         "bounds": None,
         "case_path": str(case_path),
+    }
+
+
+# ---------------------------------------------------------------------------
+# POST /cases/{name}/transform-geometry
+# ---------------------------------------------------------------------------
+
+
+class TransformRequest(BaseModel):
+    rotate_x: float = 0.0
+    rotate_y: float = 0.0
+    rotate_z: float = 0.0
+    translate_x: float = 0.0
+    translate_y: float = 0.0
+    translate_z: float = 0.0
+
+
+@router.post("/{name}/transform-geometry")
+async def transform_geometry(name: str, req: TransformRequest):
+    """Rotate and/or translate the uploaded STL geometry, then regenerate mesh dicts.
+
+    Rotation is in degrees (XYZ Euler order), translation in meters.
+    The STL file is rewritten on disk and new bounding-box-based configs
+    are regenerated.
+    """
+    case_path = Path(validate_case_path(name))
+    if not case_path.is_dir():
+        raise HTTPException(status_code=404, detail=f"Case '{name}' not found")
+
+    tri_dir = case_path / "constant" / "triSurface"
+    if not tri_dir.is_dir():
+        raise HTTPException(status_code=404, detail="No triSurface directory")
+
+    # Find the STL file
+    stl_files = [f for f in tri_dir.glob("*.stl") if not f.name.endswith(".gz")]
+    if not stl_files:
+        raise HTTPException(status_code=404, detail="No STL file found in triSurface/")
+
+    stl_file = stl_files[0]
+    raw = stl_file.read_bytes()
+
+    # Apply transform
+    transformed = transform_stl(
+        raw,
+        rotate_x=req.rotate_x,
+        rotate_y=req.rotate_y,
+        rotate_z=req.rotate_z,
+        translate_x=req.translate_x,
+        translate_y=req.translate_y,
+        translate_z=req.translate_z,
+    )
+    stl_file.write_bytes(transformed)
+
+    # Re-parse bounds
+    try:
+        bbox = stl_bounds(stl_file)
+    except (ValueError, struct.error) as exc:
+        raise HTTPException(status_code=422, detail=f"Failed to parse transformed STL: {exc}")
+
+    # Detect domain_type from template.json if available
+    domain_type = "ground_vehicle"
+    meta_file = case_path / "template.json"
+    if not meta_file.is_file():
+        # Check in the template dirs
+        for tpl_dir in Path(FOAM_TEMPLATES).iterdir():
+            tj = tpl_dir / "template.json"
+            if tj.is_file():
+                try:
+                    meta = json.loads(tj.read_text(encoding="utf-8"))
+                    # Can't easily tell which template was used — keep default
+                except (json.JSONDecodeError, OSError):
+                    pass
+
+    # Regenerate mesh dicts
+    system_dir = case_path / "system"
+    system_dir.mkdir(parents=True, exist_ok=True)
+
+    block_mesh_dict = generate_block_mesh_dict(bbox, stl_file.name, domain_type)
+    (system_dir / "blockMeshDict").write_text(block_mesh_dict, encoding="utf-8")
+
+    snappy_dict = generate_snappy_hex_mesh_dict(bbox, stl_file.name, domain_type)
+    (system_dir / "snappyHexMeshDict").write_text(snappy_dict, encoding="utf-8")
+
+    sfe_dict = generate_surface_feature_extract_dict(stl_file.name)
+    (system_dir / "surfaceFeatureExtractDict").write_text(sfe_dict, encoding="utf-8")
+
+    return {
+        "filename": stl_file.name,
+        "triangles": bbox.num_triangles,
+        "bounds": {
+            "min": [bbox.min_x, bbox.min_y, bbox.min_z],
+            "max": [bbox.max_x, bbox.max_y, bbox.max_z],
+        },
     }
 
 

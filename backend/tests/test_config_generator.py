@@ -13,6 +13,7 @@ from services.config_generator import (
     generate_snappy_hex_mesh_dict,
     generate_surface_feature_extract_dict,
     stl_bounds,
+    transform_stl,
 )
 
 
@@ -134,9 +135,9 @@ class TestGenerateBlockMeshDict:
         assert "4.5" in result
 
         # Boundary patches — symmetric layout
-        assert "symmetryPlane" in result
-        assert "type symmetryPlane;" in result
-        assert "side" in result
+        assert "symWall" in result
+        assert "type symmetry;" in result
+        assert "left" in result
         assert "inlet" in result
         assert "outlet" in result
         assert "lowerWall" in result
@@ -161,7 +162,7 @@ class TestGenerateBlockMeshDict:
         assert "-5" in result
         assert "15" in result
         # y_min is always 0 for symmetric domain
-        assert "symmetryPlane" in result
+        assert "symWall" in result
         # z_max should be 8
         assert "8" in result
 
@@ -174,7 +175,7 @@ class TestGenerateBlockMeshDict:
         assert "lowerWall" in result
         assert 'type wall;' in result
         # Y=0 symmetry plane
-        assert "type symmetryPlane;" in result
+        assert "type symmetry;" in result
 
     def test_generate_block_mesh_dict_freestream(self):
         """Freestream domain: symmetric z, lowerWall is patch (not wall), Y=0 symmetry."""
@@ -190,7 +191,7 @@ class TestGenerateBlockMeshDict:
         assert "-4" in result or "-1.3" in result
 
         # Y=0 symmetry plane should still be present
-        assert "type symmetryPlane;" in result
+        assert "type symmetry;" in result
 
 
 # ---------------------------------------------------------------------------
@@ -250,3 +251,134 @@ class TestGenerateSurfaceFeatureExtractDict:
         assert "extractFromSurface" in result
         assert "includedAngle" in result
         assert "subsetFeatures" in result
+
+
+# ---------------------------------------------------------------------------
+# STL transform (rotation / translation)
+# ---------------------------------------------------------------------------
+
+
+class TestTransformStlBinary:
+    """Test rotation and translation on binary STL data."""
+
+    def test_identity_transform(self, binary_stl_file):
+        """No rotation or translation returns identical bytes."""
+        raw = binary_stl_file.read_bytes()
+        result = transform_stl(raw)
+        assert result == raw
+
+    def test_translate_z(self, binary_stl_file):
+        """Translate vertices by +10 in Z; bounds should shift."""
+        raw = binary_stl_file.read_bytes()
+        transformed = transform_stl(raw, translate_z=10.0)
+
+        # Write to temp file so stl_bounds can parse it
+        out_path = binary_stl_file.parent / "shifted.stl"
+        out_path.write_bytes(transformed)
+        bb = stl_bounds(out_path)
+
+        assert bb.min_z == pytest.approx(10.0)
+        assert bb.max_z == pytest.approx(10.0)
+        # X and Y should be unchanged
+        assert bb.min_x == pytest.approx(0.0)
+        assert bb.max_y == pytest.approx(1.0)
+
+    def test_rotate_90_x(self, binary_stl_file):
+        """Rotate 90° around X swaps Y→Z and Z→-Y.
+
+        Original vertices: (0,0,0), (1,0,0), (0,1,0)
+        After 90° X rotation: Y→Z, Z→-Y
+        Expected: (0,0,0), (1,0,0), (0,0,1)
+        """
+        raw = binary_stl_file.read_bytes()
+        transformed = transform_stl(raw, rotate_x=90.0)
+
+        out_path = binary_stl_file.parent / "rotated.stl"
+        out_path.write_bytes(transformed)
+        bb = stl_bounds(out_path)
+
+        assert bb.min_x == pytest.approx(0.0)
+        assert bb.max_x == pytest.approx(1.0)
+        assert bb.min_y == pytest.approx(0.0, abs=1e-5)
+        assert bb.max_y == pytest.approx(0.0, abs=1e-5)
+        assert bb.min_z == pytest.approx(0.0, abs=1e-5)
+        assert bb.max_z == pytest.approx(1.0, abs=1e-5)
+
+    def test_rotate_90_z(self, binary_stl_file):
+        """Rotate 90° around Z swaps X→Y and Y→-X.
+
+        Original vertices: (0,0,0), (1,0,0), (0,1,0)
+        After 90° Z rotation: X→Y, Y→-X
+        Expected: (0,0,0), (0,1,0), (-1,0,0)
+        """
+        raw = binary_stl_file.read_bytes()
+        transformed = transform_stl(raw, rotate_z=90.0)
+
+        out_path = binary_stl_file.parent / "rotated_z.stl"
+        out_path.write_bytes(transformed)
+        bb = stl_bounds(out_path)
+
+        assert bb.min_x == pytest.approx(-1.0, abs=1e-5)
+        assert bb.max_x == pytest.approx(0.0, abs=1e-5)
+        assert bb.min_y == pytest.approx(0.0, abs=1e-5)
+        assert bb.max_y == pytest.approx(1.0, abs=1e-5)
+
+    def test_rotate_and_translate(self, binary_stl_file):
+        """Combined rotation + translation."""
+        raw = binary_stl_file.read_bytes()
+        transformed = transform_stl(raw, rotate_x=90.0, translate_z=5.0)
+
+        out_path = binary_stl_file.parent / "rot_trans.stl"
+        out_path.write_bytes(transformed)
+        bb = stl_bounds(out_path)
+
+        # After rotate_x=90: Z range becomes [0, 1]
+        # After translate_z=5: Z range becomes [5, 6]
+        assert bb.min_z == pytest.approx(5.0, abs=1e-5)
+        assert bb.max_z == pytest.approx(6.0, abs=1e-5)
+
+    def test_triangle_count_preserved(self, binary_stl_file):
+        """Transform should not change triangle count."""
+        raw = binary_stl_file.read_bytes()
+        transformed = transform_stl(raw, rotate_y=45.0, translate_x=100.0)
+
+        out_path = binary_stl_file.parent / "count_check.stl"
+        out_path.write_bytes(transformed)
+        bb = stl_bounds(out_path)
+
+        assert bb.num_triangles == 1
+
+
+class TestTransformStlAscii:
+    """Test rotation and translation on ASCII STL data."""
+
+    def test_identity_transform(self, ascii_stl_file):
+        """No rotation or translation returns identical bytes."""
+        raw = ascii_stl_file.read_bytes()
+        result = transform_stl(raw)
+        assert result == raw
+
+    def test_translate_z(self, ascii_stl_file):
+        """Translate vertices by +10 in Z."""
+        raw = ascii_stl_file.read_bytes()
+        transformed = transform_stl(raw, translate_z=10.0)
+
+        out_path = ascii_stl_file.parent / "shifted_ascii.stl"
+        out_path.write_bytes(transformed)
+        bb = stl_bounds(out_path)
+
+        assert bb.min_z == pytest.approx(10.0)
+        assert bb.max_z == pytest.approx(10.0)
+        assert bb.min_x == pytest.approx(0.0)
+
+    def test_rotate_90_x(self, ascii_stl_file):
+        """Rotate 90° around X on ASCII STL."""
+        raw = ascii_stl_file.read_bytes()
+        transformed = transform_stl(raw, rotate_x=90.0)
+
+        out_path = ascii_stl_file.parent / "rotated_ascii.stl"
+        out_path.write_bytes(transformed)
+        bb = stl_bounds(out_path)
+
+        assert bb.max_z == pytest.approx(1.0, abs=1e-5)
+        assert bb.max_y == pytest.approx(0.0, abs=1e-5)

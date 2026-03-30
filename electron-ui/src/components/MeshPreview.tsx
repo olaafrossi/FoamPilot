@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useThree } from "@react-three/fiber";
-import { OrbitControls } from "@react-three/drei";
+import { OrbitControls, Html } from "@react-three/drei";
 import * as THREE from "three";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
@@ -10,6 +10,8 @@ import { RotateCcw } from "lucide-react";
 
 interface MeshPreviewProps {
   caseName: string;
+  /** Increment to force a re-fetch of the geometry file */
+  refreshKey?: number;
 }
 
 function MeshModel({ geometry }: { geometry: THREE.BufferGeometry }) {
@@ -115,6 +117,103 @@ function STLModel({ url }: { url: string }) {
   return <MeshModel geometry={geometry} />;
 }
 
+/** Colored axis arrows with HTML labels showing simulation directions */
+function AxisHelper() {
+  const arrowLength = 2.2;
+  const headLength = 0.3;
+  const headWidth = 0.15;
+  const origin = new THREE.Vector3(-3.5, -3.5, -2);
+
+  const axes = [
+    {
+      dir: new THREE.Vector3(1, 0, 0),
+      color: "#ef4444",
+      label: "X Flow",
+      offset: [arrowLength + 0.15, 0, 0] as [number, number, number],
+    },
+    {
+      dir: new THREE.Vector3(0, 1, 0),
+      color: "#22c55e",
+      label: "Y Lateral",
+      offset: [0, arrowLength + 0.15, 0] as [number, number, number],
+    },
+    {
+      dir: new THREE.Vector3(0, 0, 1),
+      color: "#3b82f6",
+      label: "Z Up",
+      offset: [0, 0, arrowLength + 0.15] as [number, number, number],
+    },
+  ];
+
+  return (
+    <group position={origin}>
+      {axes.map(({ dir, color, label, offset }) => (
+        <group key={label}>
+          <arrowHelper
+            args={[dir, new THREE.Vector3(0, 0, 0), arrowLength, color, headLength, headWidth]}
+          />
+          <Html
+            position={offset}
+            center
+            style={{
+              fontSize: 10,
+              fontFamily: "var(--font-mono, monospace)",
+              color,
+              fontWeight: 600,
+              whiteSpace: "nowrap",
+              userSelect: "none",
+              pointerEvents: "none",
+              textShadow: "0 0 4px rgba(0,0,0,0.8)",
+            }}
+          >
+            {label}
+          </Html>
+        </group>
+      ))}
+    </group>
+  );
+}
+
+/** Ground plane indicator at Z=0 */
+function GroundPlane() {
+  return (
+    <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, 0, -2]}>
+      <planeGeometry args={[12, 12]} />
+      <meshBasicMaterial color="#1a3a1a" transparent opacity={0.15} side={THREE.DoubleSide} />
+    </mesh>
+  );
+}
+
+/** Flow direction arrow in the scene */
+function FlowArrow() {
+  const dir = new THREE.Vector3(1, 0, 0);
+  const origin = new THREE.Vector3(-4.5, 0, 3);
+  return (
+    <group>
+      <arrowHelper
+        args={[dir, origin, 2.5, "#ef4444", 0.4, 0.2]}
+      />
+      <Html
+        position={[-3.2, 0, 3.5]}
+        center
+        style={{
+          fontSize: 10,
+          fontFamily: "var(--font-mono, monospace)",
+          color: "#ef4444",
+          fontWeight: 600,
+          whiteSpace: "nowrap",
+          userSelect: "none",
+          pointerEvents: "none",
+          textShadow: "0 0 4px rgba(0,0,0,0.8)",
+          opacity: 0.7,
+        }}
+      >
+        Flow direction
+      </Html>
+    </group>
+  );
+}
+
 function CameraReset({ resetTrigger }: { resetTrigger: number }) {
   const { camera } = useThree();
   useEffect(() => {
@@ -127,7 +226,7 @@ function CameraReset({ resetTrigger }: { resetTrigger: number }) {
   return null;
 }
 
-export default function MeshPreview({ caseName }: MeshPreviewProps) {
+export default function MeshPreview({ caseName, refreshKey = 0 }: MeshPreviewProps) {
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [fileType, setFileType] = useState<"obj" | "stl" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -173,7 +272,7 @@ export default function MeshPreview({ caseName }: MeshPreviewProps) {
     return () => {
       if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
-  }, [caseName]);
+  }, [caseName, refreshKey]);
 
   if (loading) {
     return (
@@ -215,6 +314,9 @@ export default function MeshPreview({ caseName }: MeshPreviewProps) {
           <STLModel url={fileUrl} />
         )}
         <gridHelper args={[10, 10, "#333333", "#222222"]} rotation={[-Math.PI / 2, 0, 0]} />
+        <AxisHelper />
+        <GroundPlane />
+        <FlowArrow />
         <OrbitControls
           enableDamping
           dampingFactor={0.1}
@@ -242,6 +344,25 @@ export default function MeshPreview({ caseName }: MeshPreviewProps) {
       >
         <RotateCcw size={14} />
       </button>
+      {/* Legend */}
+      <div
+        style={{
+          position: "absolute",
+          bottom: 6,
+          left: 8,
+          display: "flex",
+          gap: 10,
+          fontSize: 10,
+          fontFamily: "var(--font-mono, monospace)",
+          opacity: 0.6,
+          userSelect: "none",
+          pointerEvents: "none",
+        }}
+      >
+        <span style={{ color: "#ef4444" }}>X = Flow</span>
+        <span style={{ color: "#22c55e" }}>Y = Lateral</span>
+        <span style={{ color: "#3b82f6" }}>Z = Up</span>
+      </div>
     </div>
   );
 }

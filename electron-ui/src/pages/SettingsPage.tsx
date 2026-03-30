@@ -1,11 +1,14 @@
 import { useState, useEffect } from "react";
-import { getConfig, setConfig } from "../api";
+import { getConfig, setConfig, syncCoresFromBackend } from "../api";
 import type { AppConfig, DockerFullStatus, ContainerUpdateInfo } from "../types";
 import { RefreshCw, Loader2 } from "lucide-react";
 
 export default function SettingsPage() {
   const [form, setForm] = useState<AppConfig>(() => ({ ...getConfig() }));
   const [saved, setSaved] = useState(false);
+
+  // Docker state
+  const [backendCores, setBackendCores] = useState<number | null>(null);
 
   // Docker state
   const [dockerStatus, setDockerStatus] = useState<DockerFullStatus | null>(null);
@@ -17,6 +20,12 @@ export default function SettingsPage() {
   const [checkingUpdates, setCheckingUpdates] = useState(false);
 
   useEffect(() => {
+    syncCoresFromBackend().then((cores) => {
+      if (cores !== null) {
+        setBackendCores(cores);
+        setForm((prev) => ({ ...prev, cores }));
+      }
+    });
     if (window.foamPilot?.docker) {
       window.foamPilot.docker.getStatus().then(setDockerStatus).catch(() => {});
     }
@@ -106,12 +115,19 @@ export default function SettingsPage() {
           value={form.paraViewPath}
           onChange={(v) => update("paraViewPath", v)}
         />
-        <SettingInput
-          label="CPU Cores (for parallel meshing & solving)"
-          value={String(form.cores)}
-          type="number"
-          onChange={(v) => update("cores", Math.max(1, parseInt(v) || 1))}
-        />
+        <div style={{ backgroundColor: "var(--bg-surface)", border: "1px solid var(--border)", padding: 16, borderRadius: 0 }}>
+          <label className="text-[13px] block mb-2" style={{ color: "var(--fg-muted)" }}>
+            CPU Cores (for parallel meshing &amp; solving)
+          </label>
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-[13px] px-3 py-1.5" style={{ backgroundColor: "var(--bg-input)", border: "1px solid var(--border)", color: "var(--fg)" }}>
+              {backendCores ?? form.cores}
+            </span>
+            <span className="text-[12px]" style={{ color: "var(--fg-muted)" }}>
+              Set by FOAM_CORES in docker/.env
+            </span>
+          </div>
+        </div>
       </div>
       <div className="mb-8 flex items-center gap-4">
         <button
@@ -128,8 +144,9 @@ export default function SettingsPage() {
         )}
       </div>
       <p className="text-[13px] mb-8" style={{ color: "var(--fg-muted)" }}>
-        Settings are stored in your browser. CPU cores controls how many parallel
-        processes OpenFOAM uses for meshing and solving.
+        Settings are stored in your browser. CPU cores is read from the Docker
+        container&apos;s FOAM_CORES environment variable — edit <code style={{ color: "var(--fg)" }}>docker/.env</code> and
+        restart the container to change it.
       </p>
 
       {/* Docker Section — only show in Electron context */}

@@ -10,6 +10,28 @@ let config: AppConfig = {
 export function setConfig(c: AppConfig) { config = c; }
 export function getConfig() { return config; }
 
+/**
+ * Fetch the backend's /config endpoint and sync cores (FOAM_CORES env var)
+ * into the local config. Returns the backend-reported cores value.
+ */
+export async function syncCoresFromBackend(): Promise<number | null> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3000);
+    const res = await fetch(api("/config"), { signal: controller.signal });
+    clearTimeout(timeout);
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (typeof data.cores === "number" && data.cores >= 1) {
+      config = { ...config, cores: data.cores };
+      return data.cores;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 const api = (path: string) => `${config.backendUrl}${path}`;
 
 export async function fetchTemplates(): Promise<Template[]> {
@@ -105,6 +127,30 @@ export async function uploadGeometry(
     body: formData,
   });
   if (!res.ok) throw new Error(`Failed to upload geometry: ${res.statusText}`);
+  return res.json();
+}
+
+export async function transformGeometry(
+  caseName: string,
+  transform: {
+    rotate_x?: number;
+    rotate_y?: number;
+    rotate_z?: number;
+    translate_x?: number;
+    translate_y?: number;
+    translate_z?: number;
+  },
+): Promise<{
+  filename: string;
+  triangles: number;
+  bounds: { min: number[]; max: number[] };
+}> {
+  const res = await fetch(api(`/cases/${caseName}/transform-geometry`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(transform),
+  });
+  if (!res.ok) throw new Error(`Failed to transform geometry: ${res.statusText}`);
   return res.json();
 }
 

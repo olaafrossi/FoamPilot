@@ -1,8 +1,10 @@
-import { useState, useEffect, useCallback } from "react";
-import { LayoutGrid, Upload, Info, Wind, Tag, type LucideIcon } from "lucide-react";
-import { fetchTemplates, createCase, deleteCase, uploadGeometry, classifyGeometry } from "../api";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { LayoutGrid, Upload, Info, Wind, Tag, RotateCw, Move, type LucideIcon } from "lucide-react";
+import { fetchTemplates, createCase, deleteCase, uploadGeometry, classifyGeometry, transformGeometry } from "../api";
 import type { Template, GeometryClassification } from "../types";
 import MeshPreview from "../components/MeshPreview";
+import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
+import * as THREE from "three";
 
 const UNIT_OPTIONS = [
   { label: "Millimeters (mm)", value: "mm", scale: 0.001, hint: "Most CAD tools export in mm" },
@@ -73,6 +75,30 @@ export default function GeometryStep({
   const [useCase, setUseCase] = useState("external_aero");
   const [classification, setClassification] = useState<GeometryClassification | null>(null);
   const [classOverride, setClassOverride] = useState<string | null>(null);
+  const [previewKey, setPreviewKey] = useState(0);
+  const [transforming, setTransforming] = useState(false);
+  /** Raw STL bounding box in file units (before scaling) */
+  const [rawBounds, setRawBounds] = useState<{ size: [number, number, number] } | null>(null);
+
+  // Parse the pending STL client-side to get raw dimensions
+  useEffect(() => {
+    if (!pendingFile) { setRawBounds(null); return; }
+    let cancelled = false;
+    pendingFile.arrayBuffer().then((buf) => {
+      if (cancelled) return;
+      try {
+        const loader = new STLLoader();
+        const geo = loader.parse(buf);
+        geo.computeBoundingBox();
+        const s = new THREE.Vector3();
+        geo.boundingBox!.getSize(s);
+        setRawBounds({ size: [s.x, s.y, s.z] });
+      } catch {
+        setRawBounds(null);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [pendingFile]);
 
   useEffect(() => {
     if (mode !== "template") return;
@@ -184,10 +210,44 @@ export default function GeometryStep({
     }
   }, [pendingFile, stlUnit, setCaseName, scaffoldTemplate]);
 
+  /** Resulting dimensions after applying the selected scale factor */
+  const scaledDims = useMemo(() => {
+    if (!rawBounds) return null;
+    const unitOpt = UNIT_OPTIONS.find((u) => u.value === stlUnit);
+    const scale = unitOpt?.scale ?? 1.0;
+    const [rx, ry, rz] = rawBounds.size;
+    const m = { x: rx * scale, y: ry * scale, z: rz * scale };
+    const mToFt = 3.28084;
+    const ft = { x: m.x * mToFt, y: m.y * mToFt, z: m.z * mToFt };
+    return { m, ft };
+  }, [rawBounds, stlUnit]);
+
   const handleClassOverride = (value: string) => {
     setClassOverride(value);
     setGeometryClass(value);
   };
+
+  const handleTransform = useCallback(async (transform: {
+    rotate_x?: number;
+    rotate_y?: number;
+    rotate_z?: number;
+    translate_x?: number;
+    translate_y?: number;
+    translate_z?: number;
+  }) => {
+    if (!caseName) return;
+    setTransforming(true);
+    setError(null);
+    try {
+      const info = await transformGeometry(caseName, transform);
+      setUploadInfo((prev) => prev ? { ...prev, bounds: info.bounds } : prev);
+      setPreviewKey((k) => k + 1);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Failed to transform geometry");
+    } finally {
+      setTransforming(false);
+    }
+  }, [caseName]);
 
   const handleNext = () => {
     completeStep(0);
@@ -634,6 +694,35 @@ export default function GeometryStep({
                 Vertices will be scaled by {UNIT_OPTIONS.find((u) => u.value === stlUnit)?.scale} to convert to meters.
               </p>
             )}
+
+            {/* Resulting dimensions preview */}
+            {scaledDims && (
+              <div className="mt-3 p-2" style={{ background: "#1a1a1e", border: "1px solid var(--border)" }}>
+                <p className="text-[11px] font-semibold mb-1.5" style={{ color: "var(--fg-muted)" }}>
+                  Resulting dimensions after scaling
+                </p>
+                <div className="text-[11px] space-y-1" style={{ fontFamily: "var(--font-mono, monospace)" }}>
+                  <div className="flex gap-6" style={{ color: "var(--fg)" }}>
+                    <span style={{ color: "var(--fg-muted)", minWidth: 50 }}>Meters:</span>
+                    <span>{scaledDims.m.x.toFixed(3)} × {scaledDims.m.y.toFixed(3)} × {scaledDims.m.z.toFixed(3)} m</span>
+                  </div>
+                  <div className="flex gap-6" style={{ color: "var(--fg)" }}>
+                    <span style={{ color: "var(--fg-muted)", minWidth: 50 }}>Feet:</span>
+                    <span>{scaledDims.ft.x.toFixed(2)} × {scaledDims.ft.y.toFixed(2)} × {scaledDims.ft.z.toFixed(2)} ft</span>
+                  </div>
+                </div>
+                {scaledDims.m.x < 0.01 && scaledDims.m.y < 0.01 && scaledDims.m.z < 0.01 && (
+                  <p className="text-[11px] mt-1.5" style={{ color: "var(--warning)" }}>
+                    ⚠ Very small — dimensions are all under 1 cm. Check if the correct unit is selected.
+                  </p>
+                )}
+                {scaledDims.m.x > 1000 || scaledDims.m.y > 1000 || scaledDims.m.z > 1000 ? (
+                  <p className="text-[11px] mt-1.5" style={{ color: "var(--warning)" }}>
+                    ⚠ Very large — a dimension exceeds 1 km. Check if the correct unit is selected.
+                  </p>
+                ) : null}
+              </div>
+            )}
           </div>
 
           <div
@@ -693,40 +782,311 @@ export default function GeometryStep({
       )}
 
       {uploadInfo && (
-        <div className="flex gap-4 mb-4 max-w-3xl">
+        <>
+          <div className="flex gap-4 mb-4 max-w-3xl">
+            <div
+              className="p-4 shrink-0"
+              style={{
+                background: "var(--bg-surface)",
+                border: "1px solid var(--border)",
+                borderRadius: 0,
+                minWidth: 200,
+              }}
+            >
+              <p className="text-[13px]" style={{ color: "var(--fg)" }}>
+                <span style={{ color: "var(--fg-muted)" }}>File:</span>{" "}
+                {uploadInfo.filename}
+              </p>
+              <p className="text-[13px]" style={{ color: "var(--fg)" }}>
+                <span style={{ color: "var(--fg-muted)" }}>Triangles:</span>{" "}
+                {uploadInfo.triangles.toLocaleString()}
+              </p>
+              <p className="text-[13px]" style={{ color: "var(--fg)" }}>
+                <span style={{ color: "var(--fg-muted)" }}>Case name:</span> {caseName}
+              </p>
+              {scaffoldTemplate && (
+                <p className="text-[13px]" style={{ color: "var(--fg)" }}>
+                  <span style={{ color: "var(--fg-muted)" }}>Physics:</span>{" "}
+                  {scaffoldTemplate.name}
+                </p>
+              )}
+            </div>
+            {caseName && (
+              <div className="flex-1" style={{ minHeight: 300 }}>
+                <MeshPreview caseName={caseName} refreshKey={previewKey} />
+              </div>
+            )}
+          </div>
+
+          {/* --- Orientation & Alignment Controls --- */}
           <div
-            className="p-4 shrink-0"
+            className="p-4 mb-4 max-w-3xl"
             style={{
               background: "var(--bg-surface)",
               border: "1px solid var(--border)",
               borderRadius: 0,
-              minWidth: 200,
             }}
           >
-            <p className="text-[13px]" style={{ color: "var(--fg)" }}>
-              <span style={{ color: "var(--fg-muted)" }}>File:</span>{" "}
-              {uploadInfo.filename}
-            </p>
-            <p className="text-[13px]" style={{ color: "var(--fg)" }}>
-              <span style={{ color: "var(--fg-muted)" }}>Triangles:</span>{" "}
-              {uploadInfo.triangles.toLocaleString()}
-            </p>
-            <p className="text-[13px]" style={{ color: "var(--fg)" }}>
-              <span style={{ color: "var(--fg-muted)" }}>Case name:</span> {caseName}
-            </p>
-            {scaffoldTemplate && (
-              <p className="text-[13px]" style={{ color: "var(--fg)" }}>
-                <span style={{ color: "var(--fg-muted)" }}>Physics:</span>{" "}
-                {scaffoldTemplate.name}
-              </p>
-            )}
-          </div>
-          {caseName && (
-            <div className="flex-1" style={{ minHeight: 300 }}>
-              <MeshPreview caseName={caseName} />
+            <div className="flex items-center gap-2 mb-3">
+              <RotateCw size={14} style={{ color: "var(--accent)" }} />
+              <span className="text-[13px] font-semibold" style={{ color: "var(--fg)", fontFamily: "var(--font-display)" }}>
+                Align Geometry to Simulation Axes
+              </span>
+              {transforming && (
+                <span className="text-[11px] ml-2" style={{ color: "var(--fg-muted)" }}>
+                  Applying...
+                </span>
+              )}
             </div>
-          )}
-        </div>
+
+            <p className="text-[12px] mb-3 leading-relaxed" style={{ color: "var(--fg-muted)" }}>
+              The simulation expects: <span style={{ color: "#ef4444" }}>X = flow direction (front to back)</span>,{" "}
+              <span style={{ color: "#22c55e" }}>Y = lateral (symmetry at Y=0)</span>,{" "}
+              <span style={{ color: "#3b82f6" }}>Z = up</span>.
+              Use the rotation buttons below if your STL uses a different axis convention.
+            </p>
+
+            {/* Bounding box readout */}
+            {uploadInfo.bounds && (
+              <div className="mb-3 p-2" style={{ background: "#1a1a1e", border: "1px solid var(--border)" }}>
+                <p className="text-[11px] font-semibold mb-1" style={{ color: "var(--fg-muted)" }}>
+                  Current bounding box (meters)
+                </p>
+                <div className="flex gap-4 text-[11px]" style={{ fontFamily: "var(--font-mono, monospace)", color: "var(--fg)" }}>
+                  <span>
+                    <span style={{ color: "#ef4444" }}>X:</span>{" "}
+                    {uploadInfo.bounds.min[0].toFixed(3)} to {uploadInfo.bounds.max[0].toFixed(3)}
+                    <span style={{ color: "var(--fg-muted)" }}> ({(uploadInfo.bounds.max[0] - uploadInfo.bounds.min[0]).toFixed(3)})</span>
+                  </span>
+                  <span>
+                    <span style={{ color: "#22c55e" }}>Y:</span>{" "}
+                    {uploadInfo.bounds.min[1].toFixed(3)} to {uploadInfo.bounds.max[1].toFixed(3)}
+                    <span style={{ color: "var(--fg-muted)" }}> ({(uploadInfo.bounds.max[1] - uploadInfo.bounds.min[1]).toFixed(3)})</span>
+                  </span>
+                  <span>
+                    <span style={{ color: "#3b82f6" }}>Z:</span>{" "}
+                    {uploadInfo.bounds.min[2].toFixed(3)} to {uploadInfo.bounds.max[2].toFixed(3)}
+                    <span style={{ color: "var(--fg-muted)" }}> ({(uploadInfo.bounds.max[2] - uploadInfo.bounds.min[2]).toFixed(3)})</span>
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Rotation buttons */}
+            <div className="mb-3">
+              <p className="text-[11px] font-semibold mb-2" style={{ color: "var(--fg-muted)" }}>
+                Rotate 90°
+              </p>
+              <div className="flex gap-2 flex-wrap">
+                {([
+                  { label: "X +90°", axis: "rotate_x", neg: false, tooltip: "Rotate around X (swaps Y/Z)" },
+                  { label: "X -90°", axis: "rotate_x", neg: true, tooltip: "Rotate around X (swaps Z/Y)" },
+                  { label: "Y +90°", axis: "rotate_y", neg: false, tooltip: "Rotate around Y (swaps Z/X)" },
+                  { label: "Y -90°", axis: "rotate_y", neg: true, tooltip: "Rotate around Y (swaps X/Z)" },
+                  { label: "Z +90°", axis: "rotate_z", neg: false, tooltip: "Rotate around Z (swaps X/Y)" },
+                  { label: "Z -90°", axis: "rotate_z", neg: true, tooltip: "Rotate around Z (swaps Y/X)" },
+                ] as const).map(({ label, axis, neg, tooltip }) => (
+                  <button
+                    key={label}
+                    title={tooltip}
+                    disabled={transforming}
+                    onClick={() => handleTransform({ [axis]: neg ? -90 : 90 })}
+                    className="px-3 py-1.5 text-[11px] transition-all"
+                    style={{
+                      background: "transparent",
+                      border: "1px solid var(--border)",
+                      color: transforming ? "var(--fg-disabled)" : "var(--fg)",
+                      cursor: transforming ? "wait" : "pointer",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!transforming) (e.currentTarget as HTMLElement).style.borderColor = "var(--accent)";
+                    }}
+                    onMouseLeave={(e) => {
+                      (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+                    }}
+                  >
+                    <RotateCw size={11} className="inline mr-1" style={{ verticalAlign: "middle" }} />
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Quick alignment presets */}
+            <div className="mb-3">
+              <p className="text-[11px] font-semibold mb-2" style={{ color: "var(--fg-muted)" }}>
+                Common axis swaps
+              </p>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  disabled={transforming}
+                  onClick={() => handleTransform({ rotate_x: 90 })}
+                  title="If your STL has Y-up, rotate so Z becomes up"
+                  className="px-3 py-1.5 text-[11px] transition-all"
+                  style={{
+                    background: "transparent",
+                    border: "1px solid var(--border)",
+                    color: transforming ? "var(--fg-disabled)" : "var(--fg)",
+                    cursor: transforming ? "wait" : "pointer",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!transforming) (e.currentTarget as HTMLElement).style.borderColor = "var(--accent)";
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+                  }}
+                >
+                  Y-up → Z-up
+                </button>
+                <button
+                  disabled={transforming}
+                  onClick={() => handleTransform({ rotate_z: 90 })}
+                  title="If your STL front faces +Y, rotate so front faces +X"
+                  className="px-3 py-1.5 text-[11px] transition-all"
+                  style={{
+                    background: "transparent",
+                    border: "1px solid var(--border)",
+                    color: transforming ? "var(--fg-disabled)" : "var(--fg)",
+                    cursor: transforming ? "wait" : "pointer",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!transforming) (e.currentTarget as HTMLElement).style.borderColor = "var(--accent)";
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+                  }}
+                >
+                  Front Y → Front X
+                </button>
+                <button
+                  disabled={transforming}
+                  onClick={() => handleTransform({ rotate_x: -90 })}
+                  title="If your STL has Z pointing forward, rotate so Z is up"
+                  className="px-3 py-1.5 text-[11px] transition-all"
+                  style={{
+                    background: "transparent",
+                    border: "1px solid var(--border)",
+                    color: transforming ? "var(--fg-disabled)" : "var(--fg)",
+                    cursor: transforming ? "wait" : "pointer",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!transforming) (e.currentTarget as HTMLElement).style.borderColor = "var(--accent)";
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+                  }}
+                >
+                  Z-forward → X-forward
+                </button>
+                <button
+                  disabled={transforming}
+                  onClick={() => handleTransform({ rotate_x: 180 })}
+                  title="Flip the model upside-down"
+                  className="px-3 py-1.5 text-[11px] transition-all"
+                  style={{
+                    background: "transparent",
+                    border: "1px solid var(--border)",
+                    color: transforming ? "var(--fg-disabled)" : "var(--fg)",
+                    cursor: transforming ? "wait" : "pointer",
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!transforming) (e.currentTarget as HTMLElement).style.borderColor = "var(--accent)";
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+                  }}
+                >
+                  Flip upside-down
+                </button>
+              </div>
+            </div>
+
+            {/* Translation: auto-align helpers */}
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Move size={11} style={{ color: "var(--fg-muted)" }} />
+                <p className="text-[11px] font-semibold" style={{ color: "var(--fg-muted)" }}>
+                  Auto-position
+                </p>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                {uploadInfo.bounds && (
+                  <>
+                    <button
+                      disabled={transforming}
+                      onClick={() => {
+                        const minZ = uploadInfo.bounds.min[2];
+                        if (Math.abs(minZ) > 0.001) handleTransform({ translate_z: -minZ });
+                      }}
+                      title="Move bottom of geometry to Z=0 (ground plane)"
+                      className="px-3 py-1.5 text-[11px] transition-all"
+                      style={{
+                        background: "transparent",
+                        border: "1px solid var(--border)",
+                        color: transforming ? "var(--fg-disabled)" : "var(--fg)",
+                        cursor: transforming ? "wait" : "pointer",
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!transforming) (e.currentTarget as HTMLElement).style.borderColor = "var(--accent)";
+                      }}
+                      onMouseLeave={(e) => {
+                        (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+                      }}
+                    >
+                      Snap to ground (Z=0)
+                    </button>
+                    <button
+                      disabled={transforming}
+                      onClick={() => {
+                        const minY = uploadInfo.bounds.min[1];
+                        if (Math.abs(minY) > 0.001) handleTransform({ translate_y: -minY });
+                      }}
+                      title="Move to Y=0 symmetry plane"
+                      className="px-3 py-1.5 text-[11px] transition-all"
+                      style={{
+                        background: "transparent",
+                        border: "1px solid var(--border)",
+                        color: transforming ? "var(--fg-disabled)" : "var(--fg)",
+                        cursor: transforming ? "wait" : "pointer",
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!transforming) (e.currentTarget as HTMLElement).style.borderColor = "var(--accent)";
+                      }}
+                      onMouseLeave={(e) => {
+                        (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+                      }}
+                    >
+                      Snap to symmetry (Y=0)
+                    </button>
+                    <button
+                      disabled={transforming}
+                      onClick={() => {
+                        const cx = (uploadInfo.bounds.min[0] + uploadInfo.bounds.max[0]) / 2;
+                        if (Math.abs(cx) > 0.001) handleTransform({ translate_x: -cx });
+                      }}
+                      title="Center geometry at X=0"
+                      className="px-3 py-1.5 text-[11px] transition-all"
+                      style={{
+                        background: "transparent",
+                        border: "1px solid var(--border)",
+                        color: transforming ? "var(--fg-disabled)" : "var(--fg)",
+                        cursor: transforming ? "wait" : "pointer",
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!transforming) (e.currentTarget as HTMLElement).style.borderColor = "var(--accent)";
+                      }}
+                      onMouseLeave={(e) => {
+                        (e.currentTarget as HTMLElement).style.borderColor = "var(--border)";
+                      }}
+                    >
+                      Center X at origin
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        </>
       )}
 
       {velocityPanel}
