@@ -149,6 +149,7 @@ jobs:
       - name: Download all Electron artifacts
         uses: actions/download-artifact@v4
         with:
+          pattern: electron-*
           path: ./all-artifacts
 
       - name: Merge release files
