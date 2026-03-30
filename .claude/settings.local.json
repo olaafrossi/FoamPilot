@@ -30,7 +30,9 @@
       "Bash(find /dev/FoamPilot -path *backend/routers*.py -type f)",
       "Bash(gh release:*)",
       "Bash(gh api:*)",
-      "Bash(gh run:*)"
+      "Bash(gh run:*)",
+      "Bash(find C:/dev/FoamPilot/electron-ui -name electron-builder* -o -name *builder*)",
+      "Bash(find C:/dev/FoamPilot -maxdepth 2 -name electron-builder* -o -name *.yml)"
     ]
   }
 }
