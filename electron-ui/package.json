@@ -7,10 +7,12 @@
   "scripts": {
     "dev": "vite",
     "dev:electron": "npm run build:preload && concurrently \"vite\" \"wait-on http://localhost:5173 && cross-env VITE_DEV_SERVER_URL=http://localhost:5173 electron electron/main.ts\"",
-    "build:preload": "tsc --ignoreConfig --target ES2022 --module commonjs --esModuleInterop --outDir electron-dist electron/preload.ts",
+    "build:preload": "tsc -p tsconfig.preload.json",
+    "clean:electron": "node -e \"require('fs').rmSync('electron-dist',{recursive:true,force:true})\"",
+    "verify:preload": "node -e \"const f=require('fs').readFileSync('electron-dist/preload.js','utf8'); if(!f.includes('require(\\\"electron\\\")')) { console.error('FAIL: preload.js is not CommonJS'); process.exit(1); } console.log('OK: preload.js is CommonJS');\"",
     "build": "tsc && vite build",
     "build:main": "tsc -p tsconfig.electron.json",
-    "build:electron": "npm run build && npm run build:main && electron-builder",
+    "build:electron": "npm run build && npm run clean:electron && npm run build:main && npm run build:preload && npm run verify:preload && electron-builder",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest"

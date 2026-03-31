@@ -495,6 +495,32 @@ export default function App() {
       </div>
     );
 
+  // Detect packaged Electron with broken preload bridge
+  const isPackagedElectron = window.location.protocol === "file:";
+  if (isPackagedElectron && !window.foamPilot) {
+    return (
+      <div
+        className="flex flex-col items-center justify-center h-screen gap-4"
+        style={{ background: "var(--bg-editor)", color: "var(--fg)" }}
+      >
+        <h1 style={{ fontSize: 22, fontWeight: 700, fontFamily: "var(--font-display)" }}>
+          FoamPilot failed to initialize
+        </h1>
+        <p style={{ fontSize: 13, color: "var(--fg-muted)", maxWidth: 400, textAlign: "center" }}>
+          The application bridge did not load. This usually means the app was packaged incorrectly.
+          Try restarting FoamPilot or reinstalling from the latest release.
+        </p>
+        <button
+          onClick={() => window.location.reload()}
+          className="px-5 py-2 text-[13px] font-semibold"
+          style={{ backgroundColor: "var(--accent)", color: "#09090B", border: "none", cursor: "pointer" }}
+        >
+          Restart
+        </button>
+      </div>
+    );
+  }
+
   // Show setup page if Docker/backend not ready (only in Electron context)
   if (!dockerReady && window.foamPilot?.docker) {
     return <SetupPage onReady={() => setDockerReady(true)} />;

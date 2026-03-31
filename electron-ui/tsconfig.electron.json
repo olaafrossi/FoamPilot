@@ -14,5 +14,5 @@
     "rootDir": "electron"
   },
   "include": ["electron/**/*.ts"],
-  "exclude": ["electron/__tests__"]
+  "exclude": ["electron/__tests__", "electron/preload.ts"]
 }
