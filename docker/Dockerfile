@@ -37,10 +37,21 @@ RUN useradd -m -s /bin/bash openfoam && \
 ENV FOAM_RUN=/home/openfoam/run
 ENV FOAM_TEMPLATES=/opt/foampilot/templates
 
-# ── Templates ────��───────────────────────────────────────────────────
+# ── Templates ────────────────────────────────────────────────────────
 COPY --chown=openfoam:openfoam templates/ /opt/foampilot/templates/
 
-# ��─ Backend ───────────────────────────────────────────────────���──────
+# ── Stock OpenFOAM tutorials for setup verification ──────────────────
+# Copy case files from installed OpenFOAM, then our template.json overlays
+RUN for tut in airFoil2D motorBike; do \
+        src="/usr/lib/openfoam/openfoam2512/tutorials/incompressible/simpleFoam/$tut"; \
+        dst="/opt/foampilot/templates/tutorials/incompressible/simpleFoam/$tut"; \
+        if [ -d "$src" ]; then \
+            cp -rn "$src"/. "$dst"/ ; \
+            chown -R openfoam:openfoam "$dst"; \
+        fi; \
+    done
+
+# ── Backend ──────────────────────────────────────────────────────────
 COPY backend/ /app/
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh && chown -R openfoam:openfoam /app
