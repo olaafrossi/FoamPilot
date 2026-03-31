@@ -96,6 +96,16 @@
 **Cons:** Requires case cloning logic, ~1-2hr CC effort.
 **Context:** The backend already has a `POST /cases/{name}/clone` endpoint. The UI would clone the case, navigate to Physics step, and let the user adjust velocity/BCs before re-running. Results comparison view would be a natural follow-on.
 **Depends on:** Wizard-first rearchitecture (current work).
+### macOS Docker Auto-Install
+**What:** Extend the automated Docker installation flow to macOS (currently Windows-only via winget).
+**Why:** The Windows auto-install flow (WSL2 + Docker Desktop via winget) eliminates the biggest onboarding friction. macOS users still get a browser link, which loses hobbyists the same way Windows did before the auto-install.
+**Pros:** Complete zero-friction onboarding on both major desktop platforms.
+**Cons:** Different mechanics: `brew install --cask docker` (if Homebrew present) or download .dmg + hdiutil mount + cp to Applications. No WSL/reboot concerns, but Homebrew detection adds a code path.
+**Context:** The Windows auto-install landed in the current sprint. Pattern is proven: detect package manager (winget/brew) → install via package manager → fall back to direct download. macOS is simpler than Windows (no WSL, no reboot), so this is mostly adapting the existing flow.
+**Effort:** S (CC: ~30 min) | **Priority:** P2
+**Depends on:** Windows Docker auto-install (current work, provides the pattern).
+**Added:** 2026-03-31
+
 ## Aero Knowledge Engine Phase 2
 
 ### Laminar Solver Path (icoFoam)

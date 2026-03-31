@@ -3,6 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as net from "net";
 import * as os from "os";
+import * as https from "https";
 import { fileURLToPath } from "url";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -14,6 +15,16 @@ export interface DockerStatus {
   version?: string;
   running?: boolean;
   composeAvailable?: boolean;
+}
+
+export interface WslStatus {
+  installed: boolean;
+  version?: string;
+}
+
+export interface InstallState {
+  stage: string;
+  timestamp: string;
 }
 
 export interface DiagnosticCheck {
@@ -397,6 +408,254 @@ export class DockerManager {
 
     const passed = checks.every((c) => c.status === "pass" || c.status === "skip");
     return { passed, checks };
+  }
+
+  // ── Windows Docker auto-install ──────────────────────────────────────
+
+  /** Check if WSL2 is installed (Windows only). */
+  async checkWsl(): Promise<WslStatus> {
+    if (process.platform !== "win32") return { installed: true };
+    try {
+      const output = await this.execWithTimeout("wsl", ["--status"], 5000);
+      return { installed: true, version: output.trim().split("\n")[0] };
+    } catch {
+      return { installed: false };
+    }
+  }
+
+  /** Check if winget is available. */
+  async checkWinget(): Promise<boolean> {
+    try {
+      await this.execWithTimeout("winget", ["--version"], 5000);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Check if Windows build supports Docker Desktop (>= 10.0.19044). */
+  checkWindowsBuild(): { supported: boolean; build: string } {
+    const release = os.release(); // e.g. "10.0.22631"
+    const parts = release.split(".");
+    const build = parseInt(parts[2] || "0", 10);
+    return { supported: build >= 19044, build: release };
+  }
+
+  /** Install WSL2 via elevated PowerShell. Returns whether reboot is needed. */
+  installWsl(): Promise<{ ok: boolean; needsReboot: boolean; error?: string }> {
+    return new Promise((resolve) => {
+      const child = spawn("powershell", [
+        "-Command",
+        "Start-Process", "wsl", "-ArgumentList", "'--install --no-distribution'",
+        "-Verb", "RunAs", "-Wait",
+      ], { shell: true, stdio: ["ignore", "pipe", "pipe"] });
+
+      let stderr = "";
+      child.stderr?.on("data", (d: Buffer) => { stderr += d.toString(); });
+
+      child.on("close", async (code) => {
+        if (code !== 0) {
+          // Verify if WSL was actually installed despite non-zero exit
+          const wsl = await this.checkWsl();
+          if (wsl.installed) {
+            resolve({ ok: true, needsReboot: true });
+          } else {
+            resolve({ ok: false, needsReboot: false, error: stderr || "WSL installation failed. You may have denied the admin prompt." });
+          }
+          return;
+        }
+        // WSL install typically requires a reboot
+        resolve({ ok: true, needsReboot: true });
+      });
+
+      child.on("error", (err) => {
+        resolve({ ok: false, needsReboot: false, error: err.message });
+      });
+    });
+  }
+
+  /** Install Docker Desktop via winget (primary path). Streams progress lines. */
+  installDockerViaWinget(onProgress?: (line: string) => void): Promise<{ ok: boolean; error?: string }> {
+    return new Promise((resolve) => {
+      const child = spawn("winget", [
+        "install", "Docker.DockerDesktop",
+        "--accept-source-agreements",
+        "--accept-package-agreements",
+        "--silent",
+      ], { stdio: ["ignore", "pipe", "pipe"] });
+
+      const timeout = setTimeout(() => {
+        child.kill();
+        resolve({ ok: false, error: "Docker installation timed out after 15 minutes." });
+      }, 15 * 60 * 1000);
+
+      child.stdout?.on("data", (data: Buffer) => {
+        data.toString().split("\n").filter(Boolean).forEach((line) => onProgress?.(line));
+      });
+      child.stderr?.on("data", (data: Buffer) => {
+        data.toString().split("\n").filter(Boolean).forEach((line) => onProgress?.(line));
+      });
+
+      child.on("close", (code) => {
+        clearTimeout(timeout);
+        if (code === 0) {
+          resolve({ ok: true });
+        } else {
+          resolve({ ok: false, error: `winget install exited with code ${code}` });
+        }
+      });
+
+      child.on("error", (err) => {
+        clearTimeout(timeout);
+        resolve({ ok: false, error: err.message });
+      });
+    });
+  }
+
+  /**
+   * Download Docker Desktop installer (fallback when winget unavailable).
+   * Streams progress as { percent, downloadedMB }.
+   */
+  downloadDockerInstaller(onProgress?: (pct: number, downloadedMB: number) => void): Promise<string> {
+    const arch = process.arch === "arm64" ? "arm64" : "amd64";
+    const url = `https://desktop.docker.com/win/main/${arch}/Docker%20Desktop%20Installer.exe`;
+    const dest = path.join(os.tmpdir(), "DockerDesktopInstaller.exe");
+
+    return new Promise((resolve, reject) => {
+      const follow = (targetUrl: string, redirects = 0) => {
+        if (redirects > 5) { reject(new Error("Too many redirects")); return; }
+
+        https.get(targetUrl, { headers: { "User-Agent": "FoamPilot" } }, (res) => {
+          if ((res.statusCode === 301 || res.statusCode === 302) && res.headers.location) {
+            follow(res.headers.location, redirects + 1);
+            return;
+          }
+          if (res.statusCode !== 200) {
+            reject(new Error(`Download failed: HTTP ${res.statusCode}`));
+            return;
+          }
+
+          const total = parseInt(res.headers["content-length"] || "0", 10);
+          let downloaded = 0;
+          const file = fs.createWriteStream(dest);
+
+          res.on("data", (chunk: Buffer) => {
+            downloaded += chunk.length;
+            const pct = total > 0 ? Math.round((downloaded / total) * 100) : 0;
+            const mb = Math.round(downloaded / (1024 * 1024));
+            onProgress?.(pct, mb);
+          });
+
+          res.pipe(file);
+          file.on("finish", () => { file.close(); resolve(dest); });
+          file.on("error", (err) => {
+            fs.unlink(dest, () => {});
+            reject(err);
+          });
+        }).on("error", (err) => {
+          fs.unlink(dest, () => {});
+          reject(err);
+        });
+      };
+      follow(url);
+    });
+  }
+
+  /** Install Docker Desktop from a downloaded .exe (fallback path). */
+  installDockerFromExe(installerPath: string): Promise<{ ok: boolean; error?: string }> {
+    return new Promise((resolve) => {
+      const child = spawn("powershell", [
+        "-Command",
+        `Start-Process '${installerPath}' -ArgumentList 'install','--quiet','--accept-license','--backend=wsl-2' -Verb RunAs -Wait`,
+      ], { shell: true, stdio: ["ignore", "pipe", "pipe"] });
+
+      const timeout = setTimeout(() => {
+        child.kill();
+        resolve({ ok: false, error: "Docker installation timed out after 10 minutes." });
+      }, 10 * 60 * 1000);
+
+      child.on("close", (code) => {
+        clearTimeout(timeout);
+        // Clean up installer
+        fs.unlink(installerPath, () => {});
+        if (code === 0) {
+          resolve({ ok: true });
+        } else {
+          resolve({ ok: false, error: `Docker installer exited with code ${code}. You may have denied the admin prompt.` });
+        }
+      });
+
+      child.on("error", (err) => {
+        clearTimeout(timeout);
+        fs.unlink(installerPath, () => {});
+        resolve({ ok: false, error: err.message });
+      });
+    });
+  }
+
+  /** Start Docker Desktop and wait for the daemon to respond. */
+  async startDockerDesktop(): Promise<{ ok: boolean; error?: string }> {
+    const candidates = [
+      path.join(process.env["ProgramFiles"] || "C:\\Program Files", "Docker", "Docker", "Docker Desktop.exe"),
+      path.join(process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "Docker", "Docker", "Docker Desktop.exe"),
+    ];
+
+    const exePath = candidates.find((p) => fs.existsSync(p));
+    if (!exePath) {
+      return { ok: false, error: "Docker Desktop executable not found." };
+    }
+
+    // Launch Docker Desktop (non-blocking)
+    spawn(exePath, [], { detached: true, stdio: "ignore" }).unref();
+
+    // Poll docker info with exponential backoff up to 120s
+    const start = Date.now();
+    let delay = 2000;
+    while (Date.now() - start < 120_000) {
+      await new Promise((r) => setTimeout(r, delay));
+      try {
+        await this.execWithTimeout("docker", ["info"], 5000);
+        return { ok: true };
+      } catch {
+        delay = Math.min(delay * 1.5, 5000);
+      }
+    }
+    return { ok: false, error: "Docker Desktop started but the daemon did not respond within 120 seconds." };
+  }
+
+  // ── Install state persistence ──────────────────────────────────────
+
+  private get installStatePath(): string {
+    return path.join(this.dataDir, "install-state.json");
+  }
+
+  getInstallState(): InstallState | null {
+    try {
+      if (!fs.existsSync(this.installStatePath)) return null;
+      const raw = JSON.parse(fs.readFileSync(this.installStatePath, "utf-8"));
+      // Expire after 24h
+      if (Date.now() - new Date(raw.timestamp).getTime() > 24 * 60 * 60 * 1000) {
+        this.clearInstallState();
+        return null;
+      }
+      return raw;
+    } catch {
+      return null;
+    }
+  }
+
+  setInstallState(stage: string): void {
+    if (!fs.existsSync(this.dataDir)) {
+      fs.mkdirSync(this.dataDir, { recursive: true });
+    }
+    fs.writeFileSync(this.installStatePath, JSON.stringify({
+      stage,
+      timestamp: new Date().toISOString(),
+    }), "utf-8");
+  }
+
+  clearInstallState(): void {
+    try { fs.unlinkSync(this.installStatePath); } catch { /* ignore */ }
   }
 
   /** Get free disk space in MB for the drive containing the data directory. */

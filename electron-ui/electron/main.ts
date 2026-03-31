@@ -320,6 +320,59 @@ ipcMain.handle("docker:update-resources", async (_, config: Record<string, unkno
   }
 });
 
+// ── Docker auto-install IPC handlers ─────────────────────────────────
+
+ipcMain.handle("docker:check-wsl", () => dockerManager.checkWsl());
+ipcMain.handle("docker:check-winget", () => dockerManager.checkWinget());
+ipcMain.handle("docker:check-windows-build", () => dockerManager.checkWindowsBuild());
+
+ipcMain.handle("docker:install-wsl", async () => {
+  const result = await dockerManager.installWsl();
+  if (result.ok && result.needsReboot) {
+    dockerManager.setInstallState("wsl-installed");
+  }
+  return result;
+});
+
+ipcMain.handle("docker:install-docker", async () => {
+  // Try winget first, fall back to direct download
+  const hasWinget = await dockerManager.checkWinget();
+
+  if (hasWinget) {
+    sendToRenderer("docker:install-progress", { type: "status", line: "Installing Docker via winget..." });
+    const result = await dockerManager.installDockerViaWinget((line) => {
+      sendToRenderer("docker:install-progress", { type: "winget", line });
+    });
+    if (result.ok) {
+      dockerManager.clearInstallState();
+      return result;
+    }
+    // winget failed — fall through to direct download
+    sendToRenderer("docker:install-progress", { type: "status", line: "winget failed, trying direct download..." });
+  }
+
+  // Fallback: direct download + silent install
+  try {
+    sendToRenderer("docker:install-progress", { type: "status", line: "Downloading Docker Desktop..." });
+    const installerPath = await dockerManager.downloadDockerInstaller((pct, mb) => {
+      sendToRenderer("docker:install-progress", { type: "download", percent: pct, mb });
+    });
+
+    sendToRenderer("docker:install-progress", { type: "status", line: "Installing Docker Desktop..." });
+    const result = await dockerManager.installDockerFromExe(installerPath);
+    if (result.ok) {
+      dockerManager.clearInstallState();
+    }
+    return result;
+  } catch (e: any) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle("docker:start-desktop", () => dockerManager.startDockerDesktop());
+ipcMain.handle("docker:get-install-state", () => dockerManager.getInstallState());
+ipcMain.handle("docker:clear-install-state", () => dockerManager.clearInstallState());
+
 // ── Update IPC handlers ──────────────────────────────────────────────
 
 ipcMain.handle("update:check", async () => {

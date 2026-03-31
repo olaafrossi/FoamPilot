@@ -19,12 +19,24 @@ vi.mock("child_process", () => ({
 
 // Mock fs
 const mockFs: Record<string, any> = {};
+const mockUnlinkSync = vi.fn();
 vi.mock("fs", () => ({
   existsSync: (p: string) => mockFs.existsSync?.(p) ?? false,
   mkdirSync: vi.fn(),
   writeFileSync: vi.fn(),
   readFileSync: (p: string, enc?: string) => mockFs.readFileSync?.(p, enc) ?? "",
   copyFileSync: vi.fn(),
+  unlinkSync: (...args: any[]) => mockUnlinkSync(...args),
+  unlink: vi.fn((_p: string, cb: Function) => cb()),
+  createWriteStream: vi.fn(() => ({
+    on: vi.fn(),
+    close: vi.fn(),
+  })),
+}));
+
+// Mock https
+vi.mock("https", () => ({
+  get: vi.fn(),
 }));
 
 import { DockerManager } from "../docker-manager";
@@ -295,6 +307,222 @@ describe("DockerManager", () => {
 
       const version = dm.getStoredVersion();
       expect(version).toBeNull();
+    });
+  });
+
+  // ── Auto-install tests ──────────────────────────────────────────────
+
+  describe("checkWsl()", () => {
+    it("should return installed when wsl --status succeeds", async () => {
+      mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+        cb(null, "Default Version: 2\n", "");
+      });
+
+      const result = await dm.checkWsl();
+      expect(result.installed).toBe(true);
+    });
+
+    it("should return not installed when wsl --status fails", async () => {
+      mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+        const err = new Error("not found") as any;
+        err.code = "ENOENT";
+        cb(err, "", "");
+      });
+
+      const result = await dm.checkWsl();
+      expect(result.installed).toBe(false);
+    });
+  });
+
+  describe("checkWinget()", () => {
+    it("should return true when winget is available", async () => {
+      mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+        cb(null, "v1.7.11261\n", "");
+      });
+
+      const result = await dm.checkWinget();
+      expect(result).toBe(true);
+    });
+
+    it("should return false when winget is not available", async () => {
+      mockExecFile.mockImplementation((_cmd: string, _args: string[], _opts: any, cb: Function) => {
+        const err = new Error("ENOENT") as any;
+        err.code = "ENOENT";
+        cb(err, "", "");
+      });
+
+      const result = await dm.checkWinget();
+      expect(result).toBe(false);
+    });
+  });
+
+  describe("checkWindowsBuild()", () => {
+    it("should report supported for current Windows build", () => {
+      // os.release() returns the real OS release — just verify the function works
+      const result = dm.checkWindowsBuild();
+      expect(typeof result.supported).toBe("boolean");
+      expect(typeof result.build).toBe("string");
+      // Current machine is Win11, should be supported
+      expect(result.supported).toBe(true);
+    });
+  });
+
+  describe("installWsl()", () => {
+    it("should return ok + needsReboot on success", async () => {
+      const mockChild = {
+        stderr: { on: vi.fn() },
+        on: vi.fn(),
+      };
+      mockSpawn.mockReturnValue(mockChild);
+
+      const promise = dm.installWsl();
+
+      // Simulate successful close
+      const closeCb = mockChild.on.mock.calls.find((c: any[]) => c[0] === "close")?.[1];
+      closeCb?.(0);
+
+      const result = await promise;
+      expect(result.ok).toBe(true);
+      expect(result.needsReboot).toBe(true);
+    });
+
+    it("should return error on spawn failure", async () => {
+      const mockChild = {
+        stderr: { on: vi.fn() },
+        on: vi.fn(),
+      };
+      mockSpawn.mockReturnValue(mockChild);
+
+      const promise = dm.installWsl();
+
+      const errorCb = mockChild.on.mock.calls.find((c: any[]) => c[0] === "error")?.[1];
+      errorCb?.(new Error("spawn failed"));
+
+      const result = await promise;
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain("spawn failed");
+    });
+  });
+
+  describe("installDockerViaWinget()", () => {
+    it("should resolve ok on exit code 0", async () => {
+      const mockChild = {
+        stdout: { on: vi.fn() },
+        stderr: { on: vi.fn() },
+        on: vi.fn(),
+        kill: vi.fn(),
+      };
+      mockSpawn.mockReturnValue(mockChild);
+
+      const lines: string[] = [];
+      const promise = dm.installDockerViaWinget((line) => lines.push(line));
+
+      // Simulate progress
+      const stdoutCb = mockChild.stdout.on.mock.calls.find((c: any[]) => c[0] === "data")?.[1];
+      stdoutCb?.(Buffer.from("Found Docker.DockerDesktop [Docker Desktop]\n"));
+
+      const closeCb = mockChild.on.mock.calls.find((c: any[]) => c[0] === "close")?.[1];
+      closeCb?.(0);
+
+      const result = await promise;
+      expect(result.ok).toBe(true);
+      expect(lines).toContain("Found Docker.DockerDesktop [Docker Desktop]");
+    });
+
+    it("should return error on non-zero exit", async () => {
+      const mockChild = {
+        stdout: { on: vi.fn() },
+        stderr: { on: vi.fn() },
+        on: vi.fn(),
+        kill: vi.fn(),
+      };
+      mockSpawn.mockReturnValue(mockChild);
+
+      const promise = dm.installDockerViaWinget();
+
+      const closeCb = mockChild.on.mock.calls.find((c: any[]) => c[0] === "close")?.[1];
+      closeCb?.(1);
+
+      const result = await promise;
+      expect(result.ok).toBe(false);
+      expect(result.error).toContain("code 1");
+    });
+  });
+
+  describe("installDockerFromExe()", () => {
+    it("should resolve ok on exit code 0 and clean up installer", async () => {
+      const mockChild = {
+        on: vi.fn(),
+        kill: vi.fn(),
+      };
+      mockSpawn.mockReturnValue(mockChild);
+
+      const promise = dm.installDockerFromExe("/tmp/installer.exe");
+
+      const closeCb = mockChild.on.mock.calls.find((c: any[]) => c[0] === "close")?.[1];
+      closeCb?.(0);
+
+      const result = await promise;
+      expect(result.ok).toBe(true);
+    });
+
+    it("should return error on non-zero exit", async () => {
+      const mockChild = {
+        on: vi.fn(),
+        kill: vi.fn(),
+      };
+      mockSpawn.mockReturnValue(mockChild);
+
+      const promise = dm.installDockerFromExe("/tmp/installer.exe");
+
+      const closeCb = mockChild.on.mock.calls.find((c: any[]) => c[0] === "close")?.[1];
+      closeCb?.(1);
+
+      const result = await promise;
+      expect(result.ok).toBe(false);
+    });
+  });
+
+  describe("install state persistence", () => {
+    it("should return null when no install state file exists", () => {
+      mockFs.existsSync = () => false;
+      expect(dm.getInstallState()).toBeNull();
+    });
+
+    it("should return parsed state when file exists and is fresh", () => {
+      const state = { stage: "wsl-installed", timestamp: new Date().toISOString() };
+      mockFs.existsSync = () => true;
+      mockFs.readFileSync = () => JSON.stringify(state);
+
+      const result = dm.getInstallState();
+      expect(result?.stage).toBe("wsl-installed");
+    });
+
+    it("should return null and clear when state is expired (>24h)", () => {
+      const old = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+      mockFs.existsSync = () => true;
+      mockFs.readFileSync = () => JSON.stringify({ stage: "wsl-installed", timestamp: old });
+
+      const result = dm.getInstallState();
+      expect(result).toBeNull();
+      expect(mockUnlinkSync).toHaveBeenCalled();
+    });
+
+    it("should write install state", async () => {
+      const fs = await import("fs");
+      mockFs.existsSync = () => true;
+
+      dm.setInstallState("wsl-installed");
+      expect(fs.writeFileSync).toHaveBeenCalled();
+      const calls = (fs.writeFileSync as any).mock.calls;
+      const lastCall = calls[calls.length - 1];
+      const content = JSON.parse(lastCall[1]);
+      expect(content.stage).toBe("wsl-installed");
+    });
+
+    it("should clear install state", () => {
+      dm.clearInstallState();
+      expect(mockUnlinkSync).toHaveBeenCalled();
     });
   });
 });

@@ -189,6 +189,19 @@ export interface DockerFullStatus {
   running?: boolean;
   composeAvailable?: boolean;
   container?: "running" | "stopped" | "not_found" | "unhealthy";
+  wslInstalled?: boolean;
+}
+
+export interface InstallProgress {
+  type: "status" | "winget" | "download";
+  line?: string;
+  percent?: number;
+  mb?: number;
+}
+
+export interface InstallState {
+  stage: string;
+  timestamp: string;
 }
 
 export interface ContainerUpdateInfo {
@@ -231,6 +244,17 @@ declare global {
         updateResources: (config: AppConfig) => Promise<{ ok: boolean; healthy?: boolean; error?: string }>;
         onProgress: (cb: (msg: string) => void) => () => void;
         onStatusChange: (cb: (status: any) => void) => () => void;
+
+        // Auto-install (Windows)
+        checkWsl: () => Promise<{ installed: boolean; version?: string }>;
+        checkWinget: () => Promise<boolean>;
+        checkWindowsBuild: () => Promise<{ supported: boolean; build: string }>;
+        installWsl: () => Promise<{ ok: boolean; needsReboot: boolean; error?: string }>;
+        installDocker: () => Promise<{ ok: boolean; error?: string }>;
+        startDesktop: () => Promise<{ ok: boolean; error?: string }>;
+        getInstallState: () => Promise<InstallState | null>;
+        clearInstallState: () => Promise<void>;
+        onInstallProgress: (cb: (data: InstallProgress) => void) => () => void;
       };
 
       updates: {

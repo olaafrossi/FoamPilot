@@ -38,6 +38,21 @@ contextBridge.exposeInMainWorld("foamPilot", {
       ipcRenderer.on("docker:status-change", handler);
       return () => ipcRenderer.removeListener("docker:status-change", handler);
     },
+
+    // Auto-install (Windows)
+    checkWsl: () => ipcRenderer.invoke("docker:check-wsl"),
+    checkWinget: () => ipcRenderer.invoke("docker:check-winget"),
+    checkWindowsBuild: () => ipcRenderer.invoke("docker:check-windows-build"),
+    installWsl: () => ipcRenderer.invoke("docker:install-wsl"),
+    installDocker: () => ipcRenderer.invoke("docker:install-docker"),
+    startDesktop: () => ipcRenderer.invoke("docker:start-desktop"),
+    getInstallState: () => ipcRenderer.invoke("docker:get-install-state"),
+    clearInstallState: () => ipcRenderer.invoke("docker:clear-install-state"),
+    onInstallProgress: (cb: (data: any) => void) => {
+      const handler = (_: any, data: any) => cb(data);
+      ipcRenderer.on("docker:install-progress", handler);
+      return () => ipcRenderer.removeListener("docker:install-progress", handler);
+    },
   },
 
   // Update management
