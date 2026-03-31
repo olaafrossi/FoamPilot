@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { getConfig, setConfig, syncCoresFromBackend } from "../api";
-import type { AppConfig, DockerFullStatus, ContainerUpdateInfo, SystemResources } from "../types";
+import type { AppConfig, DockerFullStatus, ContainerUpdateInfo, AppUpdateInfo, SystemResources } from "../types";
 import { RefreshCw, Loader2, ChevronDown, ChevronRight } from "lucide-react";
 
 export default function SettingsPage() {
@@ -21,6 +21,9 @@ export default function SettingsPage() {
   // Update state
   const [appVersion, setAppVersion] = useState<string>("—");
   const [containerUpdate, setContainerUpdate] = useState<ContainerUpdateInfo | null>(null);
+  const [appUpdate, setAppUpdate] = useState<AppUpdateInfo | null>(null);
+  const [updateCheckDone, setUpdateCheckDone] = useState(false);
+  const [updateCheckError, setUpdateCheckError] = useState(false);
   const [checkingUpdates, setCheckingUpdates] = useState(false);
 
   // Advanced section collapsed state
@@ -155,10 +158,20 @@ export default function SettingsPage() {
   const handleCheckUpdates = async () => {
     if (!window.foamPilot?.updates) return;
     setCheckingUpdates(true);
+    setUpdateCheckDone(false);
+    setUpdateCheckError(false);
     try {
       const result = await window.foamPilot.updates.check();
       setContainerUpdate(result.container);
-    } catch {}
+      setAppUpdate(result.app);
+      setUpdateCheckDone(true);
+      if (!result.app && !result.container) {
+        setUpdateCheckError(true);
+      }
+    } catch {
+      setUpdateCheckError(true);
+      setUpdateCheckDone(true);
+    }
     setCheckingUpdates(false);
   };
 
@@ -333,6 +346,44 @@ export default function SettingsPage() {
               <span className="text-[13px]" style={{ color: "var(--fg-muted)" }}>App Version</span>
               <span className="text-[13px] font-mono" style={{ color: "var(--fg)" }}>{appVersion}</span>
             </div>
+            {/* App update status */}
+            {appUpdate?.available && (
+              <div
+                className="p-3"
+                style={{
+                  backgroundColor: "rgba(245, 158, 11, 0.1)",
+                  border: "1px solid rgba(245, 158, 11, 0.3)",
+                  fontSize: 13,
+                  color: "var(--accent)",
+                }}
+              >
+                App update available: v{appUpdate.current} &rarr; v{appUpdate.latest}
+                {appUpdate.downloadUrl ? (
+                  <button
+                    onClick={() => window.open(appUpdate.downloadUrl, "_blank")}
+                    className="ml-3 underline font-semibold"
+                    style={{ color: "var(--accent)" }}
+                  >
+                    View on GitHub
+                  </button>
+                ) : (
+                  <span className="ml-3 text-[12px]" style={{ color: "var(--fg-muted)" }}>
+                    Will install on next restart
+                  </span>
+                )}
+              </div>
+            )}
+            {updateCheckDone && !updateCheckError && appUpdate && !appUpdate.available && (
+              <div className="text-[13px]" style={{ color: "#22C55E" }}>
+                App is up to date
+              </div>
+            )}
+            {updateCheckDone && updateCheckError && (
+              <div className="text-[13px]" style={{ color: "var(--fg-muted)" }}>
+                Could not check for updates
+              </div>
+            )}
+            {/* Container update status */}
             {containerUpdate?.available && (
               <div
                 className="p-3"

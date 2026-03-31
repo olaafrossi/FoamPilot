@@ -369,15 +369,21 @@ ipcMain.handle("docker:install-docker", async () => {
   }
 });
 
-ipcMain.handle("docker:start-desktop", () => dockerManager.startDockerDesktop());
+ipcMain.handle("docker:start-desktop", async () => {
+  sendToRenderer("docker:install-progress", { type: "status", line: "Updating WSL kernel..." });
+  return dockerManager.startDockerDesktop();
+});
 ipcMain.handle("docker:get-install-state", () => dockerManager.getInstallState());
 ipcMain.handle("docker:clear-install-state", () => dockerManager.clearInstallState());
 
 // ── Update IPC handlers ──────────────────────────────────────────────
 
 ipcMain.handle("update:check", async () => {
-  const containerUpdate = await updateManager.checkForContainerUpdate();
-  return { container: containerUpdate };
+  const [containerUpdate, appUpdate] = await Promise.all([
+    updateManager.checkForContainerUpdate(),
+    updateManager.checkForAppUpdate(),
+  ]);
+  return { container: containerUpdate, app: appUpdate };
 });
 
 ipcMain.handle("update:apply-container", async (_, tag: string) => {

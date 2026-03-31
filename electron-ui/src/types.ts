@@ -210,8 +210,16 @@ export interface ContainerUpdateInfo {
   latest: string;
 }
 
+export interface AppUpdateInfo {
+  available: boolean;
+  current: string;
+  latest: string;
+  downloadUrl?: string;
+}
+
 export interface UpdateCheckResult {
   container: ContainerUpdateInfo | null;
+  app: AppUpdateInfo | null;
 }
 
 // Electron preload API

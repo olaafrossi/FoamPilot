@@ -479,6 +479,7 @@ export class DockerManager {
     return new Promise((resolve) => {
       const child = spawn("winget", [
         "install", "Docker.DockerDesktop",
+        "--source", "winget",
         "--accept-source-agreements",
         "--accept-package-agreements",
         "--silent",
@@ -593,8 +594,43 @@ export class DockerManager {
     });
   }
 
+  /** Update WSL kernel to latest version (needed before Docker Desktop first start). */
+  updateWsl(): Promise<{ ok: boolean; error?: string }> {
+    return new Promise((resolve) => {
+      const child = spawn("wsl", ["--update"], { stdio: ["ignore", "pipe", "pipe"] });
+
+      let output = "";
+      child.stdout?.on("data", (d: Buffer) => { output += d.toString(); });
+      child.stderr?.on("data", (d: Buffer) => { output += d.toString(); });
+
+      const timeout = setTimeout(() => {
+        child.kill();
+        resolve({ ok: false, error: "WSL update timed out after 5 minutes." });
+      }, 5 * 60 * 1000);
+
+      child.on("close", (code) => {
+        clearTimeout(timeout);
+        // wsl --update exits 0 on success, but also exits 0 when "already up to date"
+        resolve({ ok: code === 0, error: code !== 0 ? (output || `wsl --update exited with code ${code}`) : undefined });
+      });
+
+      child.on("error", (err) => {
+        clearTimeout(timeout);
+        resolve({ ok: false, error: err.message });
+      });
+    });
+  }
+
   /** Start Docker Desktop and wait for the daemon to respond. */
   async startDockerDesktop(): Promise<{ ok: boolean; error?: string }> {
+    // Ensure WSL is up to date before first Docker start (Docker requires recent WSL kernel)
+    if (process.platform === "win32") {
+      const wslUpdate = await this.updateWsl();
+      if (!wslUpdate.ok) {
+        return { ok: false, error: `WSL update failed: ${wslUpdate.error}` };
+      }
+    }
+
     const candidates = [
       path.join(process.env["ProgramFiles"] || "C:\\Program Files", "Docker", "Docker", "Docker Desktop.exe"),
       path.join(process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "Docker", "Docker", "Docker Desktop.exe"),
