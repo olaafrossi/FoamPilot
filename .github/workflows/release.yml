@@ -115,7 +115,7 @@ jobs:
 
   # ── Create GitHub Release (tag pushes only) ──────────────────────────
   release:
-    needs: [electron, docker]
+    needs: [electron]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
 
@@ -125,6 +125,7 @@ jobs:
       - name: Download all Electron artifacts
         uses: actions/download-artifact@v4
         with:
+          pattern: electron-*
           path: ./all-artifacts
 
       - name: Merge release files
@@ -132,7 +133,7 @@ jobs:
         run: |
           mkdir -p ./releases
           for dir in ./all-artifacts/electron-*/; do
-            platform=$(basename "$dir" | sed 's/electron-//')
+            [ -d "$dir" ] || continue
             for file in "$dir"*; do
               [ -f "$file" ] || continue
               base=$(basename "$file")
