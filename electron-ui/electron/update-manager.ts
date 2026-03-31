@@ -1,6 +1,6 @@
 import { EventEmitter } from "events";
 import { app } from "electron";
-import type { DockerManager } from "./docker-manager";
+import type { DockerManager } from "./docker-manager.ts";
 
 export interface ContainerUpdateInfo {
   available: boolean;

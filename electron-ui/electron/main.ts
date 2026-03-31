@@ -1,12 +1,34 @@
-import { app, BrowserWindow, ipcMain, shell, dialog, Menu, Notification } from "electron";
+import { app, BrowserWindow, ipcMain, shell, dialog, Menu, Notification, nativeImage } from "electron";
 import * as path from "path";
 import * as fs from "fs";
+import { execFile } from "child_process";
 import { fileURLToPath } from "url";
 import { DockerManager } from "./docker-manager.ts";
 import { UpdateManager } from "./update-manager.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// In dev mode, electron runs from electron/main.ts so __dirname = electron/.
+// The compiled preload.js lives in electron-dist/.
+// In production, both main.js and preload.js are in electron-dist/.
+const isDev = __dirname.endsWith("electron");
+const preloadPath = isDev
+  ? path.join(__dirname, "..", "electron-dist", "preload.js")
+  : path.join(__dirname, "preload.js");
+
+// Resolve the build/ directory (icons live here)
+const buildDir = isDev
+  ? path.join(__dirname, "..", "build")
+  : path.join(__dirname, "..", "build");
+// Use PNG for nativeImage (works better cross-platform; ICO is for electron-builder only)
+const appIcon = path.join(buildDir, "icon.png");
+
+// Set app name and model ID for taskbar / notifications (overrides "Electron" in dev)
+app.setName("FoamPilot");
+if (process.platform === "win32") {
+  app.setAppUserModelId("com.foampilot.app");
+}
 
 let mainWindow: BrowserWindow | null = null;
 let dockerManager: DockerManager;
@@ -53,20 +75,27 @@ function saveConfig(config: Record<string, unknown>): void {
 
 function createWindow() {
   Menu.setApplicationMenu(null);
+
+  // Load icon as nativeImage — more reliable for Windows taskbar than path string
+  const icon = nativeImage.createFromPath(appIcon);
+
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 1000,
     minHeight: 700,
     title: "FoamPilot",
-    icon: path.join(__dirname, "..", "build", "icon.png"),
+    icon,
     backgroundColor: "#1a1a2e",
     webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
+      preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
     },
   });
+
+  // Explicitly set icon after creation (Windows sometimes ignores the constructor option)
+  mainWindow.setIcon(icon);
 
   if (process.env.VITE_DEV_SERVER_URL) {
     mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
@@ -100,14 +129,22 @@ ipcMain.handle("save-config", async (_, config: Record<string, unknown>) => {
 
 ipcMain.handle("open-paraview", async (_, casePath: string) => {
   const config = loadConfig();
-  const foamFile = path.join(casePath, path.basename(casePath) + ".foam");
+  const normalizedPath = path.normalize(casePath);
+  const foamFile = path.join(normalizedPath, path.basename(normalizedPath) + ".foam");
+
+  if (!fs.existsSync(normalizedPath)) {
+    return { ok: false, error: `Case folder not found: ${normalizedPath}` };
+  }
 
   if (!fs.existsSync(foamFile)) {
     fs.writeFileSync(foamFile, "");
   }
 
+  if (!fs.existsSync(config.paraViewPath)) {
+    return { ok: false, error: `ParaView not found at: ${config.paraViewPath}` };
+  }
+
   try {
-    const { execFile } = require("child_process");
     execFile(config.paraViewPath, [foamFile]);
     return { ok: true };
   } catch (e: any) {
@@ -116,7 +153,15 @@ ipcMain.handle("open-paraview", async (_, casePath: string) => {
 });
 
 ipcMain.handle("open-folder", async (_, folderPath: string) => {
-  shell.openPath(folderPath);
+  const normalizedPath = path.normalize(folderPath);
+  if (!fs.existsSync(normalizedPath)) {
+    return { ok: false, error: `Folder not found: ${normalizedPath}` };
+  }
+  const errMsg = await shell.openPath(normalizedPath);
+  if (errMsg) {
+    return { ok: false, error: errMsg };
+  }
+  return { ok: true };
 });
 
 ipcMain.handle("select-file", async (_, filters: { name: string; extensions: string[] }[]) => {
@@ -134,7 +179,7 @@ ipcMain.handle("read-file", async (_, filePath: string) => {
 
 ipcMain.handle("show-notification", async (_, title: string, body: string) => {
   if (Notification.isSupported()) {
-    const notification = new Notification({ title, body });
+    const notification = new Notification({ title, body, icon: appIcon });
     notification.show();
     return true;
   }

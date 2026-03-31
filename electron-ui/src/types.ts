@@ -208,7 +208,7 @@ declare global {
       getConfig: () => Promise<AppConfig>;
       saveConfig: (config: AppConfig) => Promise<{ ok: boolean; error?: string }>;
       openParaView: (casePath: string) => Promise<{ ok: boolean; error?: string }>;
-      openFolder: (folderPath: string) => Promise<void>;
+      openFolder: (folderPath: string) => Promise<{ ok: boolean; error?: string } | void>;
       selectFile: (filters: { name: string; extensions: string[] }[]) => Promise<string | null>;
       readFile: (filePath: string) => Promise<ArrayBuffer>;
       showNotification: (title: string, body: string) => Promise<boolean>;

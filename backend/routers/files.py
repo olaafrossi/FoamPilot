@@ -80,10 +80,15 @@ async def list_files(name: str):
 
 @router.get("/{name}/file")
 async def read_file(name: str, path: str):
-    """Return raw text content of a dictionary file."""
+    """Return raw text content of a dictionary file.
+
+    Returns ``{"content": null}`` if the file doesn't exist rather than
+    a 404, so the browser doesn't spam the console with network errors
+    on expected-missing files (e.g. snappyHexMeshDict in 2-D cases).
+    """
     full = _validate_file_path(name, path)
     if not full.is_file():
-        raise HTTPException(status_code=404, detail=f"File not found: {path}")
+        return {"content": None}
     try:
         content = full.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:

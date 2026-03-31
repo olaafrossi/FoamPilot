@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { listCases, deleteCase } from "../api";
+import { listCases, deleteCase, getConfig } from "../api";
 import { Trash2, FolderOpen, RefreshCw } from "lucide-react";
 import type { CaseInfo } from "../types";
 
@@ -27,8 +27,8 @@ export default function MySimulationsPage() {
   };
 
   const handleOpen = (name: string) => {
-    const config = (window as any).__foamConfig;
-    if (window.foamPilot?.openFolder && config?.localCasesPath) {
+    const config = getConfig();
+    if (window.foamPilot?.openFolder && config.localCasesPath) {
       window.foamPilot.openFolder(`${config.localCasesPath}/${name}`);
     }
   };

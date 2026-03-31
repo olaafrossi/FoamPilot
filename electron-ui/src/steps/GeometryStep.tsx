@@ -170,8 +170,14 @@ export default function GeometryStep({
     setPendingFile(file);
   }, []);
 
+  const needsGeometry = selected?.has_geometry === false && selected?.category !== "verification";
+
   const handleCreate = useCallback(async () => {
     if (!selected || creating) return;
+    if (needsGeometry && !pendingFile) {
+      setCreateError("This template requires an STL file. Drop one above to continue.");
+      return;
+    }
     setCreating(true);
     setCreateError(null);
 
@@ -814,16 +820,16 @@ export default function GeometryStep({
               ) : (
                 <button
                   onClick={handleCreate}
-                  disabled={creating}
+                  disabled={creating || (needsGeometry && !pendingFile)}
                   style={{
-                    background: creating ? "var(--bg-elevated)" : "var(--accent)",
-                    color: creating ? "var(--fg-disabled)" : "#09090B",
+                    background: creating || (needsGeometry && !pendingFile) ? "var(--bg-elevated)" : "var(--accent)",
+                    color: creating || (needsGeometry && !pendingFile) ? "var(--fg-disabled)" : "#09090B",
                     border: "none",
                     borderRadius: 2,
                     padding: "8px 20px",
                     fontSize: 13,
                     fontWeight: 600,
-                    cursor: creating ? "not-allowed" : "pointer",
+                    cursor: creating || (needsGeometry && !pendingFile) ? "not-allowed" : "pointer",
                   }}
                 >
                   {creating

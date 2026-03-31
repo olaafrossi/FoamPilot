@@ -232,17 +232,17 @@ export default function MeshPreview({ caseName, refreshKey = 0 }: MeshPreviewPro
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [resetCount, setResetCount] = useState(0);
+  const blobUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
     const config = getConfig();
-    let blobUrl: string | null = null;
+    let cancelled = false;
 
     const loadGeometry = async () => {
       setLoading(true);
       setError(null);
 
       try {
-        // Use the dedicated backend endpoint that finds + decompresses geometry
         const res = await fetch(
           `${config.backendUrl}/cases/${caseName}/geometry-file`,
         );
@@ -251,28 +251,43 @@ export default function MeshPreview({ caseName, refreshKey = 0 }: MeshPreviewPro
           throw new Error(detail || res.statusText);
         }
 
-        // Detect file type from Content-Disposition or URL
+        if (cancelled) return;
+
         const disposition = res.headers.get("content-disposition") ?? "";
         const isStl = disposition.includes(".stl") ||
           res.headers.get("content-type")?.includes("stl");
 
         const blob = await res.blob();
-        blobUrl = URL.createObjectURL(blob);
-        setFileUrl(blobUrl);
+        if (cancelled) return;
+
+        // Revoke previous blob URL before creating a new one
+        if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
+
+        const url = URL.createObjectURL(blob);
+        blobUrlRef.current = url;
+        setFileUrl(url);
         setFileType(isStl ? "stl" : "obj");
       } catch (e) {
-        setError(e instanceof Error ? e.message : "Failed to load geometry");
+        if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load geometry");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     };
 
     loadGeometry();
 
-    return () => {
-      if (blobUrl) URL.revokeObjectURL(blobUrl);
-    };
+    return () => { cancelled = true; };
   }, [caseName, refreshKey]);
+
+  // Revoke blob URL on unmount
+  useEffect(() => {
+    return () => {
+      if (blobUrlRef.current) {
+        URL.revokeObjectURL(blobUrlRef.current);
+        blobUrlRef.current = null;
+      }
+    };
+  }, []);
 
   if (loading) {
     return (

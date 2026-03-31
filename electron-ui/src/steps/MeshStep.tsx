@@ -63,16 +63,18 @@ export default function MeshStep({
 
   // Pre-meshed detection: check for polyMesh boundary (or .gz / polyMesh.orig fallback)
   const [preMeshed, setPreMeshed] = useState(false);
+  const [preMeshChecked, setPreMeshChecked] = useState(false);
 
   useEffect(() => {
     if (!caseName) return;
     let cancelled = false;
-    // Try boundary, then boundary.gz (compressed by decomposePar), then polyMesh.orig
+    setPreMeshChecked(false);
     readFile(caseName, "constant/polyMesh/boundary")
       .catch(() => readFile(caseName, "constant/polyMesh/boundary.gz"))
       .catch(() => readFile(caseName, "constant/polyMesh.orig/boundary"))
       .then(() => { if (!cancelled) setPreMeshed(true); })
-      .catch(() => { if (!cancelled) setPreMeshed(false); });
+      .catch(() => { if (!cancelled) setPreMeshed(false); })
+      .finally(() => { if (!cancelled) setPreMeshChecked(true); });
     return () => { cancelled = true; };
   }, [caseName]);
 
@@ -88,13 +90,21 @@ export default function MeshStep({
     return () => setWorking(false);
   }, [running, setWorking]);
 
+  // Sync elapsed to status bar at 1Hz (not 60fps) to avoid re-render cascade
+  const elapsedRef = useRef(stopwatch.elapsed);
+  elapsedRef.current = stopwatch.elapsed;
   useEffect(() => {
-    setElapsed(stopwatch.elapsed);
-  }, [stopwatch.elapsed, setElapsed]);
+    if (!running) return;
+    const id = setInterval(() => setElapsed(elapsedRef.current), 1000);
+    return () => clearInterval(id);
+  }, [running, setElapsed]);
 
-  // Load all files on mount
+  // Load mesh config files — skip for pre-meshed cases (they don't have these files)
   useEffect(() => {
-    if (!caseName) return;
+    if (!caseName || !preMeshChecked || preMeshed) {
+      if (preMeshChecked && preMeshed) setLoading(false);
+      return;
+    }
     setLoading(true);
     Promise.allSettled(
       MESH_FILES.map((f) =>
@@ -110,11 +120,11 @@ export default function MeshStep({
       setFileContents(contents);
       setLoading(false);
     });
-  }, [caseName]);
+  }, [caseName, preMeshChecked, preMeshed]);
 
-  // Fetch suggestions
+  // Fetch suggestions — skip for pre-meshed cases (suggest endpoint needs geometry classification)
   useEffect(() => {
-    if (!caseName || velocity <= 0) return;
+    if (!caseName || velocity <= 0 || !preMeshChecked || preMeshed) return;
     let cancelled = false;
     getSuggestions(caseName, velocity, geometryClass ?? undefined)
       .then((s) => {
@@ -127,7 +137,7 @@ export default function MeshStep({
       })
       .catch(() => {});
     return () => { cancelled = true; };
-  }, [caseName, velocity, geometryClass, yPlusTarget]);
+  }, [caseName, velocity, geometryClass, yPlusTarget, preMeshed]);
 
   const saveFile = useCallback(
     async (key: string) => {
@@ -254,9 +264,7 @@ export default function MeshStep({
             if (status.status === "completed") {
               setMeshDone(true);
               // Send toast notification
-              if ("Notification" in window && Notification.permission === "granted") {
-                new Notification("FoamPilot", { body: "Mesh generation complete" });
-              }
+              window.foamPilot?.showNotification?.("FoamPilot", "Mesh generation complete");
               try {
                 const quality = await getMeshQuality(caseName);
                 setMeshQuality(quality);

@@ -103,11 +103,11 @@ export default function PhysicsStep({
     });
   }, [caseName]);
 
-  // Fetch physics suggestions
+  // Fetch physics suggestions (requires geometry classification — skip for pre-meshed cases)
   useEffect(() => {
-    if (!caseName || velocity <= 0) return;
+    if (!caseName || velocity <= 0 || !geometryClass) return;
     let cancelled = false;
-    getSuggestions(caseName, velocity, geometryClass ?? undefined)
+    getSuggestions(caseName, velocity, geometryClass)
       .then((s) => { if (!cancelled) setPhysicsSuggestion(s.physics); })
       .catch(() => {});
     return () => { cancelled = true; };

@@ -39,47 +39,9 @@ export default function ScreenshotButton({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    // Try 2x resolution capture
-    try {
-      const origWidth = canvas.width;
-      const origHeight = canvas.height;
-      const origStyleWidth = canvas.style.width;
-      const origStyleHeight = canvas.style.height;
-
-      // Temporarily double the canvas resolution
-      canvas.width = origWidth * 2;
-      canvas.height = origHeight * 2;
-      canvas.style.width = `${origWidth}px`;
-      canvas.style.height = `${origHeight}px`;
-
-      // Force a render at the new resolution by reading the context
-      const gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
-      if (gl) {
-        gl.viewport(0, 0, canvas.width, canvas.height);
-      }
-
-      // Capture — use preserveDrawingBuffer-compatible approach
-      const dataUrl = canvas.toDataURL("image/png");
-
-      // Restore original size
-      canvas.width = origWidth;
-      canvas.height = origHeight;
-      canvas.style.width = origStyleWidth;
-      canvas.style.height = origStyleHeight;
-
-      if (gl) {
-        gl.viewport(0, 0, origWidth, origHeight);
-      }
-
-      if (dataUrl && dataUrl.length > 100) {
-        triggerDownload(dataUrl, filename);
-        return;
-      }
-    } catch {
-      // Fall through to 1x capture
-    }
-
-    // Fallback: 1x capture
+    // Canvas must have preserveDrawingBuffer: true (set on the R3F Canvas).
+    // Resizing the canvas would destroy the WebGL drawing buffer, so we
+    // capture at native resolution only.
     try {
       const dataUrl = canvas.toDataURL("image/png");
       if (dataUrl && dataUrl.length > 100) {

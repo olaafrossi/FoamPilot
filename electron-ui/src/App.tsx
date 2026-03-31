@@ -309,6 +309,11 @@ function AppShell() {
             — {formatElapsed(status.elapsed)}
           </span>
         )}
+        {status.error && (
+          <span className="ml-[12px]" style={{ color: "var(--error, #ef4444)" }}>
+            {status.error}
+          </span>
+        )}
 
         {/* Right: backend connection status */}
         <div className="ml-auto flex items-center gap-[8px]">

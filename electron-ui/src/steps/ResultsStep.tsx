@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { getResults, getMeshQuality, getConfig } from "../api";
 import VisualizationPanel from "../components/VisualizationPanel";
+import { useStatus } from "../hooks/useStatus";
 import type { AeroResults, MeshQuality } from "../types";
 
 interface StepProps {
@@ -86,6 +87,7 @@ export default function ResultsStep({
   const [meshQuality, setMeshQuality] = useState<MeshQuality | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { setError: setStatusError } = useStatus();
 
   useEffect(() => {
     if (!caseName) return;
@@ -104,28 +106,51 @@ export default function ResultsStep({
     });
   }, [caseName]);
 
+  const isElectron = typeof window.foamPilot?.openParaView === "function";
+
   const handleOpenParaView = async () => {
     if (!caseName) return;
     const config = getConfig();
+    if (!config.localCasesPath) {
+      setStatusError("localCasesPath not configured — check Settings");
+      return;
+    }
     const casePath = config.localCasesPath + "/" + caseName;
+    if (!isElectron) {
+      await navigator.clipboard.writeText(casePath);
+      setStatusError(`Path copied: ${casePath} — run "npm run dev:electron" for native open`);
+      return;
+    }
     try {
       const result = await window.foamPilot.openParaView(casePath);
       if (!result.ok) {
-        setError(result.error ?? "Failed to open ParaView");
+        setStatusError(result.error ?? "Failed to open ParaView");
       }
-    } catch {
-      setError("ParaView not available");
+    } catch (e: unknown) {
+      setStatusError(e instanceof Error ? e.message : "Failed to open ParaView");
     }
   };
 
   const handleOpenFolder = async () => {
     if (!caseName) return;
     const config = getConfig();
+    if (!config.localCasesPath) {
+      setStatusError("localCasesPath not configured — check Settings");
+      return;
+    }
     const casePath = config.localCasesPath + "/" + caseName;
+    if (!isElectron) {
+      await navigator.clipboard.writeText(casePath);
+      setStatusError(`Path copied: ${casePath} — run "npm run dev:electron" for native open`);
+      return;
+    }
     try {
-      await window.foamPilot.openFolder(casePath);
-    } catch {
-      setError("Failed to open folder");
+      const result = await window.foamPilot.openFolder(casePath);
+      if (result && !result.ok) {
+        setStatusError(result.error ?? "Failed to open folder");
+      }
+    } catch (e: unknown) {
+      setStatusError(e instanceof Error ? e.message : "Failed to open folder");
     }
   };
 

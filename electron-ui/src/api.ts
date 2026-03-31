@@ -66,6 +66,7 @@ export async function readFile(caseName: string, filePath: string): Promise<stri
   const res = await fetch(api(`/cases/${caseName}/file?path=${encodeURIComponent(filePath)}`));
   if (!res.ok) throw new Error(`Failed to read file: ${res.statusText}`);
   const data = await res.json();
+  if (data.content === null) throw new Error(`File not found: ${filePath}`);
   return data.content;
 }
 

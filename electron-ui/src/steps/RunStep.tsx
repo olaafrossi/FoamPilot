@@ -110,15 +110,20 @@ export default function RunStep({
     return () => setWorking(false);
   }, [running, setWorking]);
 
+  // Sync elapsed to status bar at 1Hz (not 60fps) to avoid re-render cascade
+  const elapsedRef = useRef(stopwatch.elapsed);
+  elapsedRef.current = stopwatch.elapsed;
   useEffect(() => {
-    setElapsed(stopwatch.elapsed);
-  }, [stopwatch.elapsed, setElapsed]);
+    if (!running) return;
+    const id = setInterval(() => setElapsed(elapsedRef.current), 1000);
+    return () => clearInterval(id);
+  }, [running, setElapsed]);
 
-  // Fetch convergence prediction
+  // Fetch convergence prediction (requires geometry classification — skip for pre-meshed cases)
   useEffect(() => {
-    if (!caseName || velocity <= 0) return;
+    if (!caseName || velocity <= 0 || !geometryClass) return;
     let cancelled = false;
-    getSuggestions(caseName, velocity, geometryClass ?? undefined)
+    getSuggestions(caseName, velocity, geometryClass)
       .then((s) => { if (!cancelled) setPrediction(s.convergence); })
       .catch(() => {});
     return () => { cancelled = true; };
@@ -276,9 +281,7 @@ export default function RunStep({
             if (status.status === "completed") {
               setFinished(true);
               // Toast notification
-              if ("Notification" in window && Notification.permission === "granted") {
-                new Notification("FoamPilot", { body: "Solver run complete" });
-              }
+              window.foamPilot?.showNotification?.("FoamPilot", "Solver run complete");
             } else if (status.status === "cancelled") {
               setError("Solver run cancelled.");
             } else {
