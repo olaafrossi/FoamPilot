@@ -44,6 +44,77 @@ class BoundingBox:
 # STL parsing
 # ---------------------------------------------------------------------------
 
+@dataclass
+class YAxisStats:
+    """Y-axis analysis for symmetry plane detection."""
+    min_y: float
+    max_y: float
+    bbox_center: float   # (min + max) / 2
+    centroid: float       # mean of all vertex Y values
+    median: float         # median of all vertex Y values
+
+
+def stl_y_stats(file_path: Path) -> YAxisStats:
+    """Analyze the Y-axis distribution of an STL to find the symmetry plane.
+
+    The median is the most robust estimator — it finds the Y value with
+    equal amounts of surface geometry on each side, even when the bounding
+    box is skewed by asymmetric features.
+    """
+    file_path = Path(file_path)
+    raw = file_path.read_bytes()
+    if _is_ascii_stl(raw):
+        return _y_stats_ascii(raw.decode("utf-8", errors="replace"))
+    return _y_stats_binary(raw)
+
+
+def _y_stats_binary(raw: bytes) -> YAxisStats:
+    if len(raw) < 84:
+        raise ValueError("File too small to be a valid binary STL")
+    num_triangles = struct.unpack_from("<I", raw, 80)[0]
+    y_vals: list[float] = []
+    offset = 84
+    for _ in range(num_triangles):
+        if offset + 50 > len(raw):
+            break
+        verts = struct.unpack_from("<9f", raw, offset + 12)
+        for i in range(3):
+            y_vals.append(verts[i * 3 + 1])
+        offset += 50
+    return _compute_y_stats(y_vals)
+
+
+def _y_stats_ascii(text: str) -> YAxisStats:
+    import re
+    vertex_re = re.compile(
+        r"^\s*vertex\s+[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?"
+        r"\s+([-+]?\d*\.?\d+(?:[eE][-+]?\d+)?)",
+        re.MULTILINE,
+    )
+    y_vals = [float(m.group(1)) for m in vertex_re.finditer(text)]
+    return _compute_y_stats(y_vals)
+
+
+def _compute_y_stats(y_vals: list[float]) -> YAxisStats:
+    if not y_vals:
+        return YAxisStats(0, 0, 0, 0, 0)
+    y_vals_sorted = sorted(y_vals)
+    n = len(y_vals_sorted)
+    if n % 2 == 1:
+        median = y_vals_sorted[n // 2]
+    else:
+        median = (y_vals_sorted[n // 2 - 1] + y_vals_sorted[n // 2]) / 2
+    min_y = y_vals_sorted[0]
+    max_y = y_vals_sorted[-1]
+    return YAxisStats(
+        min_y=min_y,
+        max_y=max_y,
+        bbox_center=(min_y + max_y) / 2,
+        centroid=sum(y_vals) / n,
+        median=median,
+    )
+
+
 def stl_bounds(file_path: Path) -> BoundingBox:
     """Parse a binary or ASCII STL file to extract bounding box and triangle count."""
     file_path = Path(file_path)
@@ -354,6 +425,7 @@ def _transform_ascii_stl(
     text = _normal_re.sub(_repl_normal, text)
     text = _vertex_re.sub(_repl_vertex, text)
     return text.encode("utf-8")
+
 
 
 # ---------------------------------------------------------------------------

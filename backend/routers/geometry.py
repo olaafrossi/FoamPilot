@@ -23,6 +23,7 @@ from services.config_generator import (
     generate_surface_feature_extract_dict,
     scale_stl,
     stl_bounds,
+    stl_y_stats,
     transform_stl,
 )
 from services.foam_runner import FOAM_CORES, FOAM_RUN, FOAM_TEMPLATES, validate_case_path
@@ -39,6 +40,18 @@ from services.parsers import AeroResults, MeshQuality, parse_check_mesh, parse_f
 router = APIRouter(prefix="/cases", tags=["geometry"])
 
 _VALID_CASE_RE = re.compile(r"^[a-zA-Z0-9_\-]+$")
+
+
+def _y_stats_dict(stl_path: Path) -> dict:
+    """Return Y-axis stats as a JSON-serializable dict."""
+    stats = stl_y_stats(stl_path)
+    return {
+        "min": stats.min_y,
+        "max": stats.max_y,
+        "bbox_center": stats.bbox_center,
+        "centroid": stats.centroid,
+        "median": stats.median,
+    }
 _ALLOWED_EXTENSIONS = {".stl", ".obj"}
 
 
@@ -202,6 +215,7 @@ async def upload_geometry(
                 "min": [bbox.min_x, bbox.min_y, bbox.min_z],
                 "max": [bbox.max_x, bbox.max_y, bbox.max_z],
             },
+            "y_stats": _y_stats_dict(dest_file),
             "case_path": str(case_path),
         }
 
@@ -304,7 +318,9 @@ async def transform_geometry(name: str, req: TransformRequest):
             "min": [bbox.min_x, bbox.min_y, bbox.min_z],
             "max": [bbox.max_x, bbox.max_y, bbox.max_z],
         },
+        "y_stats": _y_stats_dict(stl_file),
     }
+
 
 
 # ---------------------------------------------------------------------------

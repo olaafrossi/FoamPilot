@@ -72,6 +72,7 @@ export default function GeometryStep({
     filename: string;
     triangles: number;
     bounds: { min: number[]; max: number[] };
+    y_stats?: { min: number; max: number; bbox_center: number; centroid: number; median: number };
   } | null>(null);
   const [previewKey, setPreviewKey] = useState(0);
   const [transforming, setTransforming] = useState(false);
@@ -220,7 +221,7 @@ export default function GeometryStep({
     setCreateError(null);
     try {
       const info = await transformGeometry(caseName, transform);
-      setUploadInfo((prev) => prev ? { ...prev, bounds: info.bounds } : prev);
+      setUploadInfo((prev) => prev ? { ...prev, bounds: info.bounds, y_stats: info.y_stats } : prev);
       setPreviewKey((k) => k + 1);
     } catch (e: unknown) {
       setCreateError(e instanceof Error ? e.message : "Failed to transform geometry");
@@ -484,9 +485,14 @@ export default function GeometryStep({
                       </button>
                     </div>
                   ) : (
-                    <p style={{ fontSize: 12, color: "var(--fg-muted)", margin: 0 }}>
-                      Drop STL here or click to browse
-                    </p>
+                    <>
+                      <p style={{ fontSize: 12, color: "var(--fg-muted)", margin: 0 }}>
+                        Drop STL here or click to browse
+                      </p>
+                      <p style={{ fontSize: 10, color: "var(--fg-muted)", margin: "4px 0 0", opacity: 0.7 }}>
+                        For symmetric bodies, upload a half-model split at the symmetry plane
+                      </p>
+                    </>
                   )}
                 </div>
 
@@ -569,7 +575,7 @@ export default function GeometryStep({
             {uploadInfo && caseName && (
               <div style={{ marginTop: 16 }}>
                 {/* Upload info summary */}
-                <div style={{ display: "flex", gap: 6, fontSize: 11, color: "var(--fg-muted)", marginBottom: 8 }}>
+                <div style={{ display: "flex", gap: 6, fontSize: 11, color: "var(--fg-muted)", marginBottom: 8, flexWrap: "wrap" }}>
                   <span>{uploadInfo.filename}</span>
                   <span>&middot;</span>
                   <span>{uploadInfo.triangles.toLocaleString()} triangles</span>
@@ -613,6 +619,49 @@ export default function GeometryStep({
                     </div>
                   </div>
                 )}
+
+                {/* Half-model validation */}
+                {uploadInfo.y_stats && (() => {
+                  const ys = uploadInfo.y_stats!;
+                  const ySize = ys.max - ys.min;
+                  const minNearZero = ySize > 0.001 && Math.abs(ys.min) < 0.01 * ySize;
+                  const allPositive = ys.min >= -0.001;
+                  const isHalfModel = minNearZero && allPositive;
+                  return (
+                    <div
+                      style={{
+                        marginTop: 8,
+                        padding: 8,
+                        background: "var(--bg-elevated)",
+                        border: `1px solid ${isHalfModel ? "var(--success)" : "var(--warning)"}`,
+                        borderRadius: 2,
+                      }}
+                    >
+                      <p style={{ fontSize: 11, fontWeight: 600, color: "var(--fg-muted)", marginBottom: 4 }}>
+                        Symmetry check
+                      </p>
+                      <div style={{ fontSize: 11, fontFamily: "var(--font-mono, monospace)", color: "var(--fg)" }}>
+                        <span style={{ color: "#22c55e" }}>Y range:</span>{" "}
+                        {ys.min.toFixed(4)} to {ys.max.toFixed(4)}
+                        <span style={{ color: "var(--fg-muted)" }}> ({ySize.toFixed(4)} wide)</span>
+                      </div>
+                      {isHalfModel ? (
+                        <p style={{ fontSize: 11, color: "var(--success)", marginTop: 4 }}>
+                          Half-model detected — Y starts near 0 with geometry in Y &gt; 0. Ready for symmetric simulation.
+                        </p>
+                      ) : allPositive && !minNearZero ? (
+                        <p style={{ fontSize: 11, color: "var(--warning)", marginTop: 4 }}>
+                          Geometry is in Y &gt; 0 but doesn&apos;t start at Y=0. Use &quot;Snap Y min to origin&quot; below to align the symmetry plane.
+                        </p>
+                      ) : (
+                        <p style={{ fontSize: 11, color: "var(--warning)", marginTop: 4 }}>
+                          Geometry extends into negative Y — this looks like a full model. For symmetric simulations,
+                          split the model at the symmetry plane in your CAD tool and upload the positive-Y half.
+                        </p>
+                      )}
+                    </div>
+                  );
+                })()}
 
                 {/* Axis alignment controls */}
                 <div
@@ -688,7 +737,7 @@ export default function GeometryStep({
                           }}
                         />
                         <TransformBtn
-                          label="Snap to symmetry (Y=0)"
+                          label="Snap Y min to origin"
                           disabled={transforming}
                           onClick={() => {
                             const minY = uploadInfo.bounds.min[1];

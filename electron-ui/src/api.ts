@@ -146,6 +146,7 @@ export async function transformGeometry(
   filename: string;
   triangles: number;
   bounds: { min: number[]; max: number[] };
+  y_stats?: { min: number; max: number; bbox_center: number; centroid: number; median: number };
 }> {
   const res = await fetch(api(`/cases/${caseName}/transform-geometry`), {
     method: "POST",

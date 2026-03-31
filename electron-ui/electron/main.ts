@@ -1,8 +1,12 @@
 import { app, BrowserWindow, ipcMain, shell, dialog, Menu, Notification } from "electron";
 import * as path from "path";
 import * as fs from "fs";
-import { DockerManager } from "./docker-manager";
-import { UpdateManager } from "./update-manager";
+import { fileURLToPath } from "url";
+import { DockerManager } from "./docker-manager.ts";
+import { UpdateManager } from "./update-manager.ts";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 let mainWindow: BrowserWindow | null = null;
 let dockerManager: DockerManager;
@@ -55,6 +59,7 @@ function createWindow() {
     minWidth: 1000,
     minHeight: 700,
     title: "FoamPilot",
+    icon: path.join(__dirname, "..", "build", "icon.png"),
     backgroundColor: "#1a1a2e",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
