@@ -57,7 +57,8 @@
     "icon": "build/icon.png",
     "win": {
       "target": "nsis",
-      "icon": "build/icon.ico"
+      "icon": "build/icon.ico",
+      "artifactName": "${productName}-Setup-${version}.${ext}"
     },
     "mac": {
       "target": "dmg",
