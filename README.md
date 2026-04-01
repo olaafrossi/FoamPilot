@@ -71,12 +71,31 @@ No compiling OpenFOAM from source. No Linux partition. No SaaS subscription. Foa
  Ready — start your first simulation
 ```
 
-The **Setup screen** walks you through each step with live progress. On Windows, FoamPilot handles the full WSL2 and Docker Desktop installation — including a guided reboot after WSL setup. After first launch, the container image is cached locally — subsequent starts take seconds.
+The **Setup screen** walks you through each step with live progress. On Windows, FoamPilot handles the full WSL2 and Docker Desktop installation including a guided reboot after WSL setup. After first launch, the container image is cached locally — subsequent starts take seconds.
 
-<p align="center">
-  <img src="docs/screenshots/10-setup-screen.png" alt="FoamPilot first-launch setup screen" width="600" />
-</p>
-<p align="center"><em>First-launch setup: FoamPilot detects Docker, pulls the OpenFOAM image, and starts the backend — all automatically.</em></p>
+<p align="center"><em>First-launch setup: FoamPilot detects Docker, pulls the OpenFOAM image, and starts the backend.</em></p>
+
+<table>
+  <tr>
+    <td><a href="docs/screenshots/Foam1.png"><img src="docs/screenshots/Foam1.png" width="200"></a></td>
+    <td><a href="docs/screenshots/Foam2.png"><img src="docs/screenshots/Foam2.png" width="200"></a></td>
+    <td><a href="docs/screenshots/Foam3.png"><img src="docs/screenshots/Foam3.png" width="200"></a></td>
+        <td><a href="docs/screenshots/Foam4.png"><img src="docs/screenshots/Foam4.png" width="200"></a></td>
+    <td><a href="docs/screenshots/Foam5.png"><img src="docs/screenshots/Foam5.png" width="200"></a></td>
+    <td><a href="docs/screenshots/Foam6.png"><img src="docs/screenshots/Foam6.png" width="200"></a></td>
+  </tr>
+</table>
+<table>
+  <tr>
+        <td><a href="docs/screenshots/Foam7.png"><img src="docs/screenshots/Foam7.png" width="200"></a></td>
+    <td><a href="docs/screenshots/Foam8.png"><img src="docs/screenshots/Foam8.png" width="200"></a></td>
+    <td><a href="docs/screenshots/Foam9.png"><img src="docs/screenshots/Foam9.png" width="200"></a></td>
+        <td><a href="docs/screenshots/Foam10.png"><img src="docs/screenshots/Foam10.png" width="200"></a></td>
+    <td><a href="docs/screenshots/Foam11.png"><img src="docs/screenshots/Foam11.png" width="200"></a></td>
+  </tr>
+</table>
+
+![Demo](docs/screenshots/FoamPilot.gif)
 
 ### Auto-updates
 
@@ -145,7 +164,7 @@ Built on Three.js + React Three Fiber:
 
 ### Case Management
 
-- Create cases from 7 built-in templates (each with learning objectives and step-by-step guidance)
+- Create cases from 4 built-in templates
 - Clone cases for parametric studies
 - Browse and edit any OpenFOAM dictionary file
 - Open in ParaView with one click
@@ -157,67 +176,6 @@ Built on Three.js + React Three Fiber:
 - Parsed residual plots (recharts) updating every iteration
 - Job status tracking with amber pulse animation
 - Elapsed time display
-
----
-
-## Screenshots
-
-> **Placeholder screenshots** — replace these with actual application captures.
-
-### Wizard — Geometry Step
-<p align="center">
-  <img src="docs/screenshots/01-geometry-step.png" alt="Geometry upload and STL preview" width="800" />
-</p>
-<p align="center"><em>Upload STL geometry with real-time 3D preview. Auto-classifies shape and suggests simulation parameters.</em></p>
-
-### Wizard — Mesh Configuration
-<p align="center">
-  <img src="docs/screenshots/02-mesh-step.png" alt="Mesh configuration with domain extents" width="800" />
-</p>
-<p align="center"><em>Configure domain sizing, surface refinement, and prism layers. Estimated cell count shown before meshing.</em></p>
-
-### Wizard — Physics & Boundary Conditions
-<p align="center">
-  <img src="docs/screenshots/03-physics-step.png" alt="Physics setup with Monaco editor" width="800" />
-</p>
-<p align="center"><em>Edit boundary conditions with OpenFOAM syntax highlighting. Turbulence model and inlet velocity configuration.</em></p>
-
-### Wizard — Run & Monitor
-<p align="center">
-  <img src="docs/screenshots/04-run-step.png" alt="Live residual monitoring" width="800" />
-</p>
-<p align="center"><em>Real-time residual convergence plot with live log streaming via WebSocket.</em></p>
-
-### Results — 3D Field Visualization
-<p align="center">
-  <img src="docs/screenshots/05-results-field.png" alt="3D pressure field visualization" width="800" />
-</p>
-<p align="center"><em>Pressure field on motorbike surface with viridis colormap. Drag to rotate, scroll to zoom.</em></p>
-
-### Results — Streamlines
-<p align="center">
-  <img src="docs/screenshots/06-results-streamlines.png" alt="Streamline visualization with particle animation" width="800" />
-</p>
-<p align="center"><em>RK4-integrated streamlines with animated particles showing flow around the geometry.</em></p>
-
-### Results — Slice Plane
-<p align="center">
-  <img src="docs/screenshots/07-results-slice.png" alt="Interactive slice plane" width="800" />
-</p>
-<p align="center"><em>Drag the slice plane through the domain to reveal internal velocity structure.</em></p>
-
-### My Simulations
-<p align="center">
-  <img src="docs/screenshots/08-my-simulations.png" alt="Case management dashboard" width="800" />
-</p>
-<p align="center"><em>Browse, clone, and manage simulation cases. Quick actions for ParaView and re-running.</em></p>
-
-### Dark UI Overview
-<p align="center">
-  <img src="docs/screenshots/09-full-ui.png" alt="Full application layout" width="800" />
-</p>
-<p align="center"><em>VS Code-inspired layout: Activity Bar, Sidebar, Editor area, and Status Bar with amber "pilot light" accent.</em></p>
-
 ---
 
 ## Quick Start
@@ -439,14 +397,11 @@ FoamPilot/
 
 ## Templates
 
-FoamPilot ships with 7 ready-to-run simulation templates:
+FoamPilot ships with 4 ready-to-run simulation templates:
 
 | Template | Solver | Category | Description |
 |---|---|---|---|
-| **motorBike** | simpleFoam | External Aero | Classic OpenFOAM tutorial — ground vehicle aerodynamics with snappyHexMesh |
 | **airFoil2D** | simpleFoam | Learning | 2D airfoil for lift/drag studies. Great starting point. |
-| **cavity** | icoFoam | Learning | Lid-driven cavity — the "Hello World" of CFD |
-| **pitzDaily** | simpleFoam | Learning | Backward-facing step with turbulent separation |
 | **fixedWingDrone** | simpleFoam | External Aero | UAV wing in freestream — small Reynolds number aero |
 | **smallPlane** | simpleFoam | External Aero | Fixed-wing aircraft aerodynamics |
 | **raceCar** | simpleFoam | External Aero | Automotive external aero with ground effect |

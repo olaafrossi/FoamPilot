@@ -1,0 +1,17 @@
+# Git
+.git
+
+# Electron frontend (not needed in backend image)
+electron-ui/node_modules
+electron-ui/dist
+electron-ui/dist-electron
+
+# Stock OpenFOAM tutorials (contain symlinks that break on Windows)
+# The Dockerfile copies needed tutorials from the installed OpenFOAM package
+templates/tutorials
+
+# IDE / OS
+.vscode
+*.swp
+.DS_Store
+Thumbs.db

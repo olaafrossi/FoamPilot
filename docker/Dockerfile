@@ -41,12 +41,13 @@ ENV FOAM_TEMPLATES=/opt/foampilot/templates
 COPY --chown=openfoam:openfoam templates/ /opt/foampilot/templates/
 
 # ── Stock OpenFOAM tutorials for setup verification ──────────────────
-# Copy case files from installed OpenFOAM, then our template.json overlays
+# Copy case files from installed OpenFOAM package (not from build context)
 RUN for tut in airFoil2D motorBike; do \
         src="/usr/lib/openfoam/openfoam2512/tutorials/incompressible/simpleFoam/$tut"; \
         dst="/opt/foampilot/templates/tutorials/incompressible/simpleFoam/$tut"; \
         if [ -d "$src" ]; then \
-            cp -rn "$src"/. "$dst"/ ; \
+            mkdir -p "$dst" && \
+            cp -r "$src"/. "$dst"/ && \
             chown -R openfoam:openfoam "$dst"; \
         fi; \
     done
