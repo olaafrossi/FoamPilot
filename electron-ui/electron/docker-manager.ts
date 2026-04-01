@@ -623,14 +623,7 @@ export class DockerManager {
 
   /** Start Docker Desktop and wait for the daemon to respond. */
   async startDockerDesktop(): Promise<{ ok: boolean; error?: string }> {
-    // Ensure WSL is up to date before first Docker start (Docker requires recent WSL kernel)
-    if (process.platform === "win32") {
-      const wslUpdate = await this.updateWsl();
-      if (!wslUpdate.ok) {
-        return { ok: false, error: `WSL update failed: ${wslUpdate.error}` };
-      }
-    }
-
+    // WSL kernel update is now done before Docker install (in the install-docker handler)
     const candidates = [
       path.join(process.env["ProgramFiles"] || "C:\\Program Files", "Docker", "Docker", "Docker Desktop.exe"),
       path.join(process.env["ProgramFiles(x86)"] || "C:\\Program Files (x86)", "Docker", "Docker", "Docker Desktop.exe"),

@@ -307,10 +307,9 @@ ipcMain.handle("docker:update-resources", async (_, config: Record<string, unkno
   try {
     await dockerManager.writeEnvFile(config as any);
     await dockerManager.down();
-    const portFree = await dockerManager.checkPort(8000);
-    if (!portFree) {
-      return { ok: false, error: "Port 8000 is already in use by another process" };
-    }
+    // Skip port check here — we just ran down(), so the port may still be in
+    // TIME_WAIT on Windows. docker compose up will fail with a clear error
+    // if something else is actually using the port.
     await dockerManager.up();
     const healthy = await dockerManager.healthCheck();
     sendToRenderer("docker:status-change", { container: healthy ? "running" : "unhealthy" });
@@ -335,24 +334,19 @@ ipcMain.handle("docker:install-wsl", async () => {
 });
 
 ipcMain.handle("docker:install-docker", async () => {
-  // Try winget first, fall back to direct download
-  const hasWinget = await dockerManager.checkWinget();
-
-  if (hasWinget) {
-    sendToRenderer("docker:install-progress", { type: "status", line: "Installing Docker via winget..." });
-    const result = await dockerManager.installDockerViaWinget((line) => {
-      sendToRenderer("docker:install-progress", { type: "winget", line });
-    });
-    if (result.ok) {
-      dockerManager.clearInstallState();
-      return result;
-    }
-    // winget failed — fall through to direct download
-    sendToRenderer("docker:install-progress", { type: "status", line: "winget failed, trying direct download..." });
-  }
-
-  // Fallback: direct download + silent install
+  // Always use direct download — winget is unreliable on fresh Windows installs
+  // (msstore source cert errors, interactive prompts despite --source winget)
   try {
+    // Update WSL kernel BEFORE installing Docker so Docker Desktop doesn't
+    // prompt the user to run "wsl --update" on first launch
+    if (process.platform === "win32") {
+      sendToRenderer("docker:install-progress", { type: "status", line: "Updating WSL kernel..." });
+      const wslUpdate = await dockerManager.updateWsl();
+      if (!wslUpdate.ok) {
+        return { ok: false, error: `WSL kernel update failed: ${wslUpdate.error}` };
+      }
+    }
+
     sendToRenderer("docker:install-progress", { type: "status", line: "Downloading Docker Desktop..." });
     const installerPath = await dockerManager.downloadDockerInstaller((pct, mb) => {
       sendToRenderer("docker:install-progress", { type: "download", percent: pct, mb });
@@ -370,7 +364,7 @@ ipcMain.handle("docker:install-docker", async () => {
 });
 
 ipcMain.handle("docker:start-desktop", async () => {
-  sendToRenderer("docker:install-progress", { type: "status", line: "Updating WSL kernel..." });
+  sendToRenderer("docker:install-progress", { type: "status", line: "Starting Docker Desktop..." });
   return dockerManager.startDockerDesktop();
 });
 ipcMain.handle("docker:get-install-state", () => dockerManager.getInstallState());

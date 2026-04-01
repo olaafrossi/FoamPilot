@@ -133,12 +133,19 @@ export default function SettingsPage() {
     setContainerAction("restarting");
     try {
       // Write latest config to .env before restart
-      await window.foamPilot.docker.updateResources(form);
+      const result = await window.foamPilot.docker.updateResources(form);
+      if (!result.ok) {
+        alert(`Failed to restart backend: ${result.error || "Unknown error"}`);
+        setContainerAction(null);
+        return;
+      }
       setActiveCores(form.cores);
       setPendingRestart(false);
       const status = await window.foamPilot.docker.getStatus();
       setDockerStatus(status);
-    } catch {}
+    } catch (e: any) {
+      alert(`Error restarting backend: ${e.message}`);
+    }
     setContainerAction(null);
   };
 

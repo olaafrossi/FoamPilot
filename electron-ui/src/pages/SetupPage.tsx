@@ -97,7 +97,7 @@ export default function SetupPage({ onReady }: SetupPageProps) {
     }
   }, [onReady]);
 
-  /** Install Docker via winget (or fallback), then start Docker Desktop. */
+  /** Update WSL kernel, install Docker via direct download, then start Docker Desktop. */
   const installDockerFlow = async () => {
     setInstalling(true);
     setError(null);
