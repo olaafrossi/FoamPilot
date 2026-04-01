@@ -45,7 +45,7 @@ No compiling OpenFOAM from source. No Linux partition. No SaaS subscription. Foa
 | **macOS** | [`FoamPilot.dmg`](https://github.com/olaafrossi/FoamPilot/releases/latest) | ~90 MB |
 | **Linux** | [`FoamPilot.AppImage`](https://github.com/olaafrossi/FoamPilot/releases/latest) | ~90 MB |
 
-> **Only prerequisite:** [Docker Desktop](https://www.docker.com/products/docker-desktop/) (free for personal use, education, and small business).
+> **Windows users:** FoamPilot auto-installs WSL2 and Docker Desktop for you — no manual setup required. macOS and Linux users need [Docker Desktop](https://www.docker.com/products/docker-desktop/) (free for personal use, education, and small business).
 
 ### What happens when you launch
 
@@ -56,7 +56,10 @@ No compiling OpenFOAM from source. No Linux partition. No SaaS subscription. Foa
  Launch the app ── first run triggers Setup screen
            │
            ▼
- ✔ Detects Docker Desktop ── prompts to install if missing
+ ✔ Installs WSL2 + Docker Desktop (Windows, automatic)
+           │
+           ▼
+ ✔ Updates WSL kernel to latest version
            │
            ▼
  ✔ Pulls the OpenFOAM container image (~2 GB, one time)
@@ -68,7 +71,7 @@ No compiling OpenFOAM from source. No Linux partition. No SaaS subscription. Foa
  Ready — start your first simulation
 ```
 
-The **Setup screen** walks you through each step with live progress. After first launch, the container image is cached locally — subsequent starts take seconds.
+The **Setup screen** walks you through each step with live progress. On Windows, FoamPilot handles the full WSL2 and Docker Desktop installation — including a guided reboot after WSL setup. After first launch, the container image is cached locally — subsequent starts take seconds.
 
 <p align="center">
   <img src="docs/screenshots/10-setup-screen.png" alt="FoamPilot first-launch setup screen" width="600" />
@@ -79,8 +82,8 @@ The **Setup screen** walks you through each step with live progress. After first
 
 Both the desktop app and the backend container update independently:
 
-- **App updates** — delivered via GitHub Releases through Electron's built-in auto-updater. Downloads in the background, installs on next restart.
-- **Container updates** — FoamPilot checks GitHub Releases for newer container tags and offers a one-click upgrade. No manual `docker pull` needed.
+- **App updates** — delivered via GitHub Releases through `electron-updater`. Downloads in the background, installs on next restart.
+- **Container updates** — FoamPilot checks GitHub Releases for newer container image tags on GHCR and offers a one-click upgrade from the Settings page. No manual `docker pull` needed.
 
 ### Why not a SaaS?
 
@@ -142,10 +145,11 @@ Built on Three.js + React Three Fiber:
 
 ### Case Management
 
-- Create cases from 7 built-in templates
+- Create cases from 7 built-in templates (each with learning objectives and step-by-step guidance)
 - Clone cases for parametric studies
 - Browse and edit any OpenFOAM dictionary file
 - Open in ParaView with one click
+- Stock OpenFOAM tutorials bundled for verification (airFoil2D, motorBike)
 
 ### Real-Time Monitoring
 
@@ -220,7 +224,7 @@ Built on Three.js + React Three Fiber:
 
 ### Prerequisites
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (for the OpenFOAM backend)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (auto-installed on Windows; manual install on macOS/Linux)
 - [Node.js](https://nodejs.org/) 20+ (for frontend development)
 - [Python](https://www.python.org/) 3.11+ (for backend development, or use Docker)
 
@@ -233,7 +237,7 @@ cd FoamPilot
 
 # Start the backend (pulls OpenFOAM v2512 image)
 cd docker
-docker-compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d
 
 # Start the frontend
 cd ../electron-ui
@@ -259,14 +263,17 @@ npm run dev:electron
 
 ### Configuration
 
-Environment variables in `docker/.env`:
+Resource settings (cores, CPU limit, memory) are configurable from the **Settings** page inside the app. Changes are written to the `.env` file and applied on backend restart.
+
+Environment variables in `.env` (managed by the app):
 
 | Variable | Default | Description |
 |---|---|---|
+| `FOAMPILOT_VERSION` | `latest` | Container image tag |
 | `FOAMPILOT_PORT` | `8000` | Backend API port |
-| `FOAMPILOT_CASES` | `../cases` | Path to simulation case storage |
-| `FOAMPILOT_TEMPLATES` | `../templates` | Path to built-in templates |
-| `FOAM_CORES` | `4` | Parallel decomposition for OpenFOAM |
+| `FOAMPILOT_CASES` | (auto) | Path to simulation case storage |
+| `FOAMPILOT_TEMPLATES` | (auto) | Path to built-in templates |
+| `FOAM_CORES` | `4` | Parallel decomposition for OpenFOAM (mpirun -np) |
 | `DOCKER_CPUS` | `4` | CPU cores allocated to container |
 | `DOCKER_MEMORY` | `8g` | Memory allocated to container |
 
@@ -330,16 +337,19 @@ graph TD
 | Layer | Technology | Version |
 |---|---|---|
 | **Desktop Shell** | Electron | 41.0 |
+| **Auto-Update** | electron-updater | 6.3 |
 | **Frontend** | React + TypeScript | 19.2 / 6.0 |
+| **Routing** | React Router | 7.13 |
 | **Build** | Vite | 8.0 |
 | **Styling** | Tailwind CSS | 4.2 |
-| **3D Engine** | Three.js + React Three Fiber | 0.183 / 9.5 |
+| **3D Engine** | Three.js + React Three Fiber + Drei | 0.183 / 9.5 / 10.7 |
 | **Code Editor** | Monaco Editor | 4.7 |
 | **Charts** | Recharts | 3.8 |
 | **Backend** | FastAPI + Uvicorn | 0.115 |
 | **Validation** | Pydantic | 2.x |
 | **Simulation** | OpenFOAM (ESI) | v2512 |
 | **Container** | Docker + Compose | Latest |
+| **Base Image** | Ubuntu | 24.04 |
 
 ---
 
@@ -352,10 +362,10 @@ FoamPilot/
 │   │   ├── pages/             # Top-level routes
 │   │   │   ├── WizardPage     #   Guided 6-step workflow
 │   │   │   ├── MySimulations  #   Case browser & management
-│   │   │   ├── SetupPage      #   Docker/backend diagnostics
-│   │   │   └── SettingsPage   #   App configuration
+│   │   │   ├── SetupPage      #   Docker/backend first-run setup
+│   │   │   └── SettingsPage   #   App + resource configuration
 │   │   ├── steps/             # Wizard step components
-│   │   │   ├── GeometryStep   #   STL upload + 3D preview
+│   │   │   ├── GeometryStep   #   STL/OBJ upload + 3D preview
 │   │   │   ├── MeshStep       #   Domain & refinement config
 │   │   │   ├── PhysicsStep    #   Boundary conditions editor
 │   │   │   ├── SolverStep     #   Solver & convergence setup
@@ -367,6 +377,12 @@ FoamPilot/
 │   │   │   ├── FieldMeshRenderer   # Surface field coloring
 │   │   │   ├── SlicePlaneRenderer  # Interactive slice planes
 │   │   │   ├── StreamlineRenderer  # Particle-traced streamlines
+│   │   │   ├── ParticleRenderer    # Animated particle paths
+│   │   │   ├── GeometryOutline     # Wireframe overlay
+│   │   │   ├── SceneCompositor     # 3D scene composition
+│   │   │   ├── SplitView           # Dual-field comparison
+│   │   │   ├── ProbeHandler        # Point probing interaction
+│   │   │   ├── ScreenshotButton    # Viewport capture
 │   │   │   ├── LogViewer           # Real-time log display
 │   │   │   ├── FoamEditor          # Monaco dict editor
 │   │   │   └── WizardStepper       # Progress indicator
@@ -375,7 +391,9 @@ FoamPilot/
 │   │   ├── api.ts             # HTTP + WebSocket client
 │   │   └── types.ts           # TypeScript interfaces
 │   └── electron/
-│       └── main.ts            # Electron main process
+│       ├── main.ts            # Electron main process + IPC handlers
+│       ├── preload.ts         # Context bridge (window.foamPilot API)
+│       └── docker-manager.ts  # Docker/WSL lifecycle management
 │
 ├── backend/                   # Python API server
 │   ├── routers/               # Endpoint groups
@@ -390,13 +408,16 @@ FoamPilot/
 │   │   ├── config_generator   #   OpenFOAM dict generation
 │   │   ├── field_parser       #   Field data extraction
 │   │   ├── foam_runner        #   Async job management
-│   │   └── geometry           #   Shape classification
+│   │   ├── geometry           #   Shape classification
+│   │   ├── pipeline_service   #   Multi-step orchestration
+│   │   ├── log_parser         #   Simulation log analysis
+│   │   └── parsers            #   Output parsing utilities
 │   └── main.py                # FastAPI app entry
 │
 ├── docker/                    # Container config
 │   ├── Dockerfile             # Ubuntu 24.04 + OpenFOAM v2512
-│   ├── docker-compose.yml     # Development
-│   └── docker-compose.prod.yml # Production
+│   ├── docker-compose.yml     # Development (mounts local code)
+│   └── docker-compose.prod.yml # Production (GHCR image)
 │
 ├── templates/                 # Built-in case templates
 │   ├── motorBike/             #   External aero (ground vehicle)
@@ -406,6 +427,10 @@ FoamPilot/
 │   ├── fixedWingDrone/        #   UAV wing
 │   ├── smallPlane/            #   Fixed-wing aircraft
 │   └── raceCar/               #   Automotive aero
+│
+├── .github/workflows/         # CI/CD
+│   ├── release.yml            #   Auto-build on tag push (Electron + Docker)
+│   └── manual-release.yml     #   Manual test releases
 │
 └── cases/                     # User simulation data
 ```
@@ -552,11 +577,11 @@ uvicorn main:app --reload --port 8000
 ```bash
 cd docker
 
-# Development (mounts local code for live reload)
-docker-compose up --build
+# Development (mounts local code, live reload via uvicorn --reload)
+docker compose up --build
 
 # Production (pre-built image from GHCR)
-docker-compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d
 ```
 
 ---
