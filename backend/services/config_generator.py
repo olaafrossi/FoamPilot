@@ -40,6 +40,58 @@ class BoundingBox:
         )
 
 
+@dataclass
+class GeometryEntry:
+    """Represents one geometry in a multi-STL case."""
+    filename: str
+    bbox: BoundingBox
+    role: str = "body"           # "body" | "rotating" | "zone"
+    refinement_min: int = 5
+    refinement_max: int = 6
+    zone_name: str | None = None  # cellZone name for role="zone"
+
+
+@dataclass
+class MRFZoneConfig:
+    """Configuration for an MRF rotation zone."""
+    name: str
+    origin: tuple[float, float, float]
+    axis: tuple[float, float, float]
+    rpm: float
+
+
+def _union_bounding_box(boxes: list[BoundingBox]) -> BoundingBox:
+    """Compute the union bounding box of multiple bounding boxes."""
+    return BoundingBox(
+        min_x=min(b.min_x for b in boxes),
+        min_y=min(b.min_y for b in boxes),
+        min_z=min(b.min_z for b in boxes),
+        max_x=max(b.max_x for b in boxes),
+        max_y=max(b.max_y for b in boxes),
+        max_z=max(b.max_z for b in boxes),
+        num_triangles=sum(b.num_triangles for b in boxes),
+    )
+
+
+def _vec_cross(
+    a: tuple[float, float, float], b: tuple[float, float, float]
+) -> tuple[float, float, float]:
+    """Cross product of two 3D vectors."""
+    return (
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    )
+
+
+def _vec_normalize(v: tuple[float, float, float]) -> tuple[float, float, float]:
+    """Normalize a 3D vector to unit length."""
+    length = math.sqrt(v[0] ** 2 + v[1] ** 2 + v[2] ** 2)
+    if length < 1e-12:
+        raise ValueError("Cannot normalize zero-length vector")
+    return (v[0] / length, v[1] / length, v[2] / length)
+
+
 # ---------------------------------------------------------------------------
 # STL parsing
 # ---------------------------------------------------------------------------
@@ -461,40 +513,42 @@ def _foam_file_header(object_name: str, class_name: str = "dictionary") -> str:
 # ---------------------------------------------------------------------------
 
 def generate_block_mesh_dict(
-    bbox: BoundingBox,
-    stl_filename: str,
+    geometries: list[GeometryEntry],
     domain_type: str = "ground_vehicle",
 ) -> str:
-    """Generate blockMeshDict string sized to the geometry bounding box.
+    """Generate blockMeshDict string sized to the union of all geometry bounding boxes.
 
-    All simulations use symmetric STL geometries (half-model), so the
-    domain is built for the positive-Y half only with a symmetry
-    boundary (symWall) at Y = 0.
+    Domain modes:
+      - half-model (default): Y from 0 (symmetry plane) to +Y, symWall at Y=0
+      - full-model (auto when MRF zones present): Y extends both directions, no symmetry
 
     Domain sizing rules (ground_vehicle):
       - 5x geometry length upstream, 15x downstream (X direction)
-      - Y from 0 (symmetry plane) to 4x geometry width (Y direction)
-      - Height from 0 to 8x geometry height (Z direction)
-      - Minimum domain of (-5, 0, 0) to (15, 4, 8)
       - ~50 cells per characteristic length
 
     Domain sizing rules (freestream):
-      - Same X/Y extents as ground_vehicle
       - Z is symmetric: ±4x geometry height centered on geometry
       - No ground plane — all boundaries are patches
     """
+    bbox = _union_bounding_box([g.bbox for g in geometries])
+    full_model = any(g.role == "zone" for g in geometries)
+
     char_length = max(bbox.size_x, bbox.size_y, bbox.size_z, 0.01)
 
     # Domain extents
     x_min = min(bbox.min_x - 5.0 * bbox.size_x, -5.0)
     x_max = max(bbox.max_x + 15.0 * bbox.size_x, 15.0)
 
-    # Symmetric half-domain: Y=0 is the symmetry plane
-    y_min = 0.0
-    y_max = max(bbox.max_y + 4.0 * bbox.size_y, 4.0)
+    if full_model:
+        # Full domain: Y extends both directions (no symmetry plane)
+        y_min = min(bbox.min_y - 4.0 * bbox.size_y, -4.0)
+        y_max = max(bbox.max_y + 4.0 * bbox.size_y, 4.0)
+    else:
+        # Symmetric half-domain: Y=0 is the symmetry plane
+        y_min = 0.0
+        y_max = max(bbox.max_y + 4.0 * bbox.size_y, 4.0)
 
-    if domain_type == "freestream":
-        # Symmetric domain: geometry floats in center
+    if domain_type == "freestream" or full_model:
         z_min = min(bbox.min_z - 4.0 * bbox.size_z, -4.0)
         z_max = max(bbox.max_z + 4.0 * bbox.size_z, 4.0)
     else:
@@ -513,6 +567,11 @@ def generate_block_mesh_dict(
         if v == 0.0:
             return "0"
         return f"{v:g}"
+
+    # In full-model mode, symWall becomes a regular patch ("right")
+    sym_name = "right" if full_model else "symWall"
+    sym_type = "patch" if full_model else "symmetry"
+    lower_type = "patch" if (domain_type == "freestream" or full_model) else "wall"
 
     result = _foam_file_header("blockMeshDict")
     result += f"""
@@ -541,9 +600,9 @@ edges
 
 boundary
 (
-    symWall
+    {sym_name}
     {{
-        type symmetry;
+        type {sym_type};
         faces
         (
             (1 5 4 0)
@@ -575,7 +634,7 @@ boundary
     }}
     lowerWall
     {{
-        type {"patch" if domain_type == "freestream" else "wall"};
+        type {lower_type};
         faces
         (
             (0 3 2 1)
@@ -602,21 +661,26 @@ boundary
 # ---------------------------------------------------------------------------
 
 def generate_snappy_hex_mesh_dict(
-    bbox: BoundingBox,
-    stl_filename: str,
+    geometries: list[GeometryEntry],
     domain_type: str = "ground_vehicle",
 ) -> str:
-    """Generate snappyHexMeshDict string for the given geometry."""
-    stem = Path(stl_filename).stem  # e.g. "myPart" from "myPart.stl"
-    emesh_name = f"{stem}.eMesh"
+    """Generate snappyHexMeshDict string for one or more geometries.
 
-    # Refinement box: slightly larger than the geometry with wake region
-    # Y starts at 0 (symmetry plane) for symmetric half-domain
+    Supports body, rotating, and zone (MRF cellZone) geometry roles.
+    Zone geometries get cellZone/faceZone/cellZoneInside instead of patchInfo.
+    """
+    bbox = _union_bounding_box([g.bbox for g in geometries])
+    full_model = any(g.role == "zone" for g in geometries)
+
+    # Refinement box: slightly larger than the union geometry with wake region
     rb_min_x = bbox.min_x - 1.0 * bbox.size_x
     rb_max_x = bbox.max_x + 3.0 * bbox.size_x
-    rb_min_y = 0.0
+    if full_model:
+        rb_min_y = bbox.min_y - 0.5 * bbox.size_y
+    else:
+        rb_min_y = 0.0
     rb_max_y = bbox.max_y + 0.5 * bbox.size_y
-    if domain_type == "freestream":
+    if domain_type == "freestream" or full_model:
         rb_min_z = bbox.min_z - 0.5 * bbox.size_z
     else:
         rb_min_z = bbox.min_z
@@ -627,13 +691,64 @@ def generate_snappy_hex_mesh_dict(
             return "0.0"
         return f"{v:.4g}"
 
-    # locationInMesh: a point outside the geometry, in the positive-Y half
+    # locationInMesh: a point outside all geometries
     loc_x = bbox.max_x + 5.0 * bbox.size_x
-    loc_y = max(bbox.max_y + 1.0 * bbox.size_y, 1.0)
-    if domain_type == "freestream":
+    if full_model:
+        loc_y = bbox.max_y + 2.0 * bbox.size_y
+    else:
+        loc_y = max(bbox.max_y + 1.0 * bbox.size_y, 1.0)
+    if domain_type == "freestream" or full_model:
         loc_z = bbox.max_z + 3.0 * bbox.size_z
     else:
         loc_z = bbox.center[2] if bbox.center[2] > 0.01 else 0.43
+
+    # Build geometry section
+    geometry_lines = ""
+    for g in geometries:
+        stem = Path(g.filename).stem
+        geometry_lines += f"    {g.filename}\n"
+        geometry_lines += f"    {{\n"
+        geometry_lines += f"        type triSurfaceMesh;\n"
+        geometry_lines += f"        name {stem};\n"
+        geometry_lines += f"    }}\n\n"
+
+    # Build features section
+    features_lines = ""
+    for g in geometries:
+        stem = Path(g.filename).stem
+        features_lines += f"        {{\n"
+        features_lines += f"            file \"{stem}.eMesh\";\n"
+        features_lines += f"            level {g.refinement_max};\n"
+        features_lines += f"        }}\n"
+
+    # Build refinementSurfaces section
+    refinement_lines = ""
+    for g in geometries:
+        stem = Path(g.filename).stem
+        refinement_lines += f"        {stem}\n"
+        refinement_lines += f"        {{\n"
+        refinement_lines += f"            level ({g.refinement_min} {g.refinement_max});\n"
+        if g.role == "zone" and g.zone_name:
+            refinement_lines += f"\n"
+            refinement_lines += f"            cellZone {g.zone_name};\n"
+            refinement_lines += f"            faceZone {g.zone_name}Faces;\n"
+            refinement_lines += f"            cellZoneInside inside;\n"
+        else:
+            refinement_lines += f"\n"
+            refinement_lines += f"            patchInfo\n"
+            refinement_lines += f"            {{\n"
+            refinement_lines += f"                type wall;\n"
+            refinement_lines += f"                inGroups ({stem}Group);\n"
+            refinement_lines += f"            }}\n"
+        refinement_lines += f"        }}\n"
+
+    # Build layer patterns (all non-zone geometries)
+    layer_stems = [Path(g.filename).stem for g in geometries if g.role != "zone"]
+    if layer_stems:
+        layer_pattern = "|".join(layer_stems)
+        layer_regex = f'"(lowerWall|{layer_pattern}).*"'
+    else:
+        layer_regex = '"lowerWall.*"'
 
     result = _foam_file_header("snappyHexMeshDict")
     result += f"""
@@ -645,12 +760,7 @@ addLayers       true;
 
 geometry
 {{
-    {stl_filename}
-    {{
-        type triSurfaceMesh;
-        name {stem};
-    }}
-
+{geometry_lines}
     refinementBox
     {{
         type box;
@@ -670,25 +780,11 @@ castellatedMeshControls
 
     features
     (
-        {{
-            file "{emesh_name}";
-            level 6;
-        }}
-    );
+{features_lines}    );
 
     refinementSurfaces
     {{
-        {stem}
-        {{
-            level (5 6);
-
-            patchInfo
-            {{
-                type wall;
-                inGroups ({stem}Group);
-            }}
-        }}
-    }}
+{refinement_lines}    }}
 
     resolveFeatureAngle 30;
 
@@ -728,7 +824,7 @@ addLayersControls
 
     layers
     {{
-        "(lowerWall|{stem}).*"
+        {layer_regex}
         {{
             nSurfaceLayers 1;
         }}
@@ -787,11 +883,12 @@ mergeTolerance 1e-6;
 # surfaceFeatureExtractDict generator
 # ---------------------------------------------------------------------------
 
-def generate_surface_feature_extract_dict(stl_filename: str) -> str:
-    """Generate surfaceFeatureExtractDict string."""
+def generate_surface_feature_extract_dict(stl_filenames: list[str]) -> str:
+    """Generate surfaceFeatureExtractDict string for one or more STL files."""
     result = _foam_file_header("surfaceFeatureExtractDict")
-    result += f"""
-{stl_filename}
+    for filename in stl_filenames:
+        result += f"""
+{filename}
 {{
     extractionMethod    extractFromSurface;
 
@@ -805,10 +902,8 @@ def generate_surface_feature_extract_dict(stl_filename: str) -> str:
 
     writeObj            yes;
 }}
-
-
-// ************************************************************************* //
 """
+    result += "\n// ************************************************************************* //\n"
     return result
 
 
@@ -832,6 +927,126 @@ method          scotch;
 
 
 # ---------------------------------------------------------------------------
+# Cylinder STL generator — auto-generate MRF zone boundaries
+# ---------------------------------------------------------------------------
+
+def generate_cylinder_stl(
+    origin: tuple[float, float, float],
+    axis: tuple[float, float, float],
+    radius: float,
+    half_length: float,
+    segments: int = 32,
+) -> bytes:
+    """Generate a closed binary STL cylinder for MRF zone definition.
+
+    The cylinder is centered at ``origin``, aligned along ``axis``, with
+    end caps at origin +/- half_length * axis_hat.
+
+    Returns binary STL bytes with 4*segments triangles (2N side + N per cap).
+    """
+    if radius <= 0:
+        raise ValueError(f"Cylinder radius must be positive, got {radius}")
+    if half_length <= 0:
+        raise ValueError(f"Cylinder half_length must be positive, got {half_length}")
+
+    ax, ay, az = _vec_normalize(axis)
+
+    # Find two perpendicular vectors to the axis
+    ref = (1.0, 0.0, 0.0) if abs(ax) < 0.9 else (0.0, 1.0, 0.0)
+    ux, uy, uz = _vec_normalize(_vec_cross((ax, ay, az), ref))
+    vx, vy, vz = _vec_cross((ax, ay, az), (ux, uy, uz))
+
+    ox, oy, oz = origin
+    top_c = (ox + half_length * ax, oy + half_length * ay, oz + half_length * az)
+    bot_c = (ox - half_length * ax, oy - half_length * ay, oz - half_length * az)
+
+    # Generate circle vertices on top and bottom caps
+    top_ring: list[tuple[float, float, float]] = []
+    bot_ring: list[tuple[float, float, float]] = []
+    for i in range(segments):
+        angle = 2.0 * math.pi * i / segments
+        ca, sa = math.cos(angle), math.sin(angle)
+        dx = radius * (ca * ux + sa * vx)
+        dy = radius * (ca * uy + sa * vy)
+        dz = radius * (ca * uz + sa * vz)
+        top_ring.append((top_c[0] + dx, top_c[1] + dy, top_c[2] + dz))
+        bot_ring.append((bot_c[0] + dx, bot_c[1] + dy, bot_c[2] + dz))
+
+    # Collect triangles as (normal, v1, v2, v3)
+    triangles: list[tuple[tuple[float, float, float], ...]] = []
+
+    for i in range(segments):
+        j = (i + 1) % segments
+        # Side wall: two triangles per segment
+        # Triangle 1: top[i], bot[i], bot[j]
+        e1 = (bot_ring[i][0] - top_ring[i][0], bot_ring[i][1] - top_ring[i][1], bot_ring[i][2] - top_ring[i][2])
+        e2 = (bot_ring[j][0] - top_ring[i][0], bot_ring[j][1] - top_ring[i][1], bot_ring[j][2] - top_ring[i][2])
+        n = _vec_cross(e1, e2)
+        nl = math.sqrt(n[0] ** 2 + n[1] ** 2 + n[2] ** 2)
+        n = (n[0] / nl, n[1] / nl, n[2] / nl) if nl > 1e-12 else (0.0, 0.0, 0.0)
+        triangles.append((n, top_ring[i], bot_ring[i], bot_ring[j]))
+
+        # Triangle 2: top[i], bot[j], top[j]
+        e1 = (bot_ring[j][0] - top_ring[i][0], bot_ring[j][1] - top_ring[i][1], bot_ring[j][2] - top_ring[i][2])
+        e2 = (top_ring[j][0] - top_ring[i][0], top_ring[j][1] - top_ring[i][1], top_ring[j][2] - top_ring[i][2])
+        n = _vec_cross(e1, e2)
+        nl = math.sqrt(n[0] ** 2 + n[1] ** 2 + n[2] ** 2)
+        n = (n[0] / nl, n[1] / nl, n[2] / nl) if nl > 1e-12 else (0.0, 0.0, 0.0)
+        triangles.append((n, top_ring[i], bot_ring[j], top_ring[j]))
+
+        # Top cap: fan from center
+        triangles.append(((ax, ay, az), top_c, top_ring[i], top_ring[j]))
+
+        # Bottom cap: fan from center (reversed winding for outward normal)
+        triangles.append(((-ax, -ay, -az), bot_c, bot_ring[j], bot_ring[i]))
+
+    # Encode as binary STL
+    num_triangles = len(triangles)
+    header = b"\x00" * 80
+    out = bytearray(header)
+    out += struct.pack("<I", num_triangles)
+    for normal, v1, v2, v3 in triangles:
+        out += struct.pack("<3f", *normal)
+        out += struct.pack("<3f", *v1)
+        out += struct.pack("<3f", *v2)
+        out += struct.pack("<3f", *v3)
+        out += struct.pack("<H", 0)
+    return bytes(out)
+
+
+# ---------------------------------------------------------------------------
+# MRFProperties generator
+# ---------------------------------------------------------------------------
+
+def generate_mrf_properties(zones: list[MRFZoneConfig]) -> str:
+    """Generate constant/MRFProperties for one or more MRF rotation zones."""
+    result = _foam_file_header("MRFProperties")
+
+    for i, zone in enumerate(zones):
+        omega = zone.rpm * 2.0 * math.pi / 60.0
+        ax, ay, az = zone.axis
+        ox, oy, oz = zone.origin
+        zone_id = f"MRF{i + 1}" if len(zones) > 1 else "MRF1"
+
+        result += f"""
+{zone_id}
+{{
+    cellZone    {zone.name};
+    active      yes;
+
+    nonRotatingPatches ();
+
+    origin      ({ox:g} {oy:g} {oz:g});
+    axis        ({ax:g} {ay:g} {az:g});
+    omega       constant {omega:.4f};  // {zone.rpm:g} RPM
+}}
+
+"""
+    result += "// ************************************************************************* //\n"
+    return result
+
+
+# ---------------------------------------------------------------------------
 # Patch injection — ensure boundary condition files cover all blockMesh patches
 # ---------------------------------------------------------------------------
 
@@ -847,14 +1062,26 @@ _PATCH_DEFAULTS: dict[str, dict[str, str]] = {
         "volScalarField": "        type            symmetry;",
         "volVectorField": "        type            symmetry;",
     },
+    "right": {
+        "volScalarField": "        type            zeroGradient;",
+        "volVectorField": "        type            zeroGradient;",
+    },
     "upperWall": {
         "volScalarField": "        type            zeroGradient;",
         "volVectorField": "        type            zeroGradient;",
     },
 }
 
+# Default BCs for geometry-derived patches (STL surfaces are walls)
+_GEOMETRY_PATCH_BC = {
+    "volScalarField": "        type            zeroGradient;",
+    "volVectorField": "        type            noSlip;",
+}
+
 # All patches that blockMeshDict creates for ground_vehicle domain
 BLOCK_MESH_PATCHES = ["symWall", "left", "inlet", "outlet", "lowerWall", "upperWall"]
+# Full-model mode replaces symWall with a regular "right" patch
+BLOCK_MESH_PATCHES_FULL = ["right", "left", "inlet", "outlet", "lowerWall", "upperWall"]
 
 
 def _detect_field_class(text: str) -> str:
@@ -864,15 +1091,28 @@ def _detect_field_class(text: str) -> str:
     return "volScalarField"
 
 
-def ensure_patches_in_bc_files(zero_dir: Path) -> None:
-    """Ensure all blockMesh patches have entries in every BC file under 0/.
+def ensure_patches_in_bc_files(
+    zero_dir: Path,
+    full_model: bool = False,
+    geometry_patches: list[str] | None = None,
+) -> None:
+    """Ensure all blockMesh and geometry patches have entries in every BC file.
 
     Reads each file in the 0/ directory, checks for missing patch names
     in the boundaryField block, and appends default entries for any that
     are missing.
+
+    ``geometry_patches`` — extra patch names derived from STL filenames
+    (e.g. ``["DronePropMeter", "DronePropMeterZone"]``).  These get
+    wall-function BCs for turbulence fields and ``zeroGradient`` otherwise.
+
+    When ``full_model`` is True (MRF zones present), the symmetry patch
+    ``symWall`` is replaced with a regular ``right`` patch.
     """
     if not zero_dir.is_dir():
         return
+
+    patches = BLOCK_MESH_PATCHES_FULL if full_model else BLOCK_MESH_PATCHES
 
     for bc_file in zero_dir.iterdir():
         if not bc_file.is_file() or bc_file.name.startswith("."):
@@ -885,10 +1125,26 @@ def ensure_patches_in_bc_files(zero_dir: Path) -> None:
         if "boundaryField" not in text:
             continue
 
+        # In full-model mode, rename symWall → right so BCs match blockMesh
+        if full_model and _has_patch_entry(text, "symWall"):
+            import re
+            text = re.sub(
+                r'(\n\s*)symWall(\s*\n\s*\{)',
+                r'\1right\2',
+                text,
+            )
+            # Also replace "type symmetry;" with "type zeroGradient;"
+            # inside what was the symWall block
+            text = text.replace(
+                "type            symmetry;",
+                "type            zeroGradient;",
+            )
+            bc_file.write_text(text, encoding="utf-8")
+
         field_class = _detect_field_class(text)
         modified = False
 
-        for patch_name in BLOCK_MESH_PATCHES:
+        for patch_name in patches:
             # Check if patch already has an entry (look for "patchName" or "patchName\n")
             # Use a simple heuristic: the patch name followed by whitespace/newline and {
             if _has_patch_entry(text, patch_name):
@@ -905,6 +1161,16 @@ def ensure_patches_in_bc_files(zero_dir: Path) -> None:
 
             # Insert before the closing } of boundaryField
             entry = f"\n    {patch_name}\n    {{\n{bc_text}\n    }}\n"
+            text = _insert_before_boundary_close(text, entry)
+            modified = True
+
+        # Add wall BCs for geometry-derived patches (from STL filenames)
+        for geo_patch in (geometry_patches or []):
+            if _has_patch_entry(text, geo_patch):
+                continue
+            # Geometry surfaces are walls — use wall functions for turbulence
+            bc_text = _GEOMETRY_PATCH_BC.get(field_class, "        type            zeroGradient;")
+            entry = f"\n    {geo_patch}\n    {{\n{bc_text}\n    }}\n"
             text = _insert_before_boundary_close(text, entry)
             modified = True
 

@@ -196,3 +196,69 @@ def test_upload_geometry_nonexistent_template_falls_back(tmp_foam_run, tmp_foam_
     # Should have fallen back to motorBike
     force_file = tmp_foam_run / "fallbackcase" / "system" / "forceCoeffs"
     assert force_file.exists()
+
+
+def _make_binary_stl_at(xmin: float, ymin: float, zmin: float, xmax: float, ymax: float, zmax: float) -> bytes:
+    """Build a binary STL with 2 triangles spanning given bounding box."""
+    header = b"\x00" * 80
+    count = struct.pack("<I", 2)
+    data = header + count
+    data += struct.pack(
+        "<12f",
+        0.0, 0.0, 1.0,
+        xmin, ymin, zmin,
+        xmax, ymin, zmin,
+        xmin, ymax, zmin,
+    ) + struct.pack("<H", 0)
+    data += struct.pack(
+        "<12f",
+        0.0, 0.0, 1.0,
+        xmin, ymin, zmax,
+        xmax, ymin, zmax,
+        xmin, ymax, zmax,
+    ) + struct.pack("<H", 0)
+    return data
+
+
+def test_transform_applies_to_all_geometries(tmp_foam_run, tmp_foam_templates, _patch_geometry_templates):
+    """Transforming the primary STL should also transform all other geometries."""
+    _make_template_scaffold(tmp_foam_templates, "motorBike", "motorBikeGroup")
+
+    client = TestClient(app)
+
+    # Upload primary geometry (body)
+    body_stl = _make_binary_stl_at(0, 0, 0, 1, 0.5, 0.3)
+    resp = client.post(
+        "/cases/multitransform/upload-geometry",
+        files={"file": ("body.stl", body_stl, "application/octet-stream")},
+    )
+    assert resp.status_code == 200
+
+    # Add a second geometry (propeller)
+    prop_stl = _make_binary_stl_at(0.4, -0.1, -0.05, 0.6, 0.1, 0.15)
+    resp = client.post(
+        "/cases/multitransform/add-geometry",
+        files={"file": ("propeller.stl", prop_stl, "application/octet-stream")},
+    )
+    assert resp.status_code == 200
+
+    # Read original propeller bounds
+    resp = client.get("/cases/multitransform/geometry-file?filename=propeller.stl")
+    assert resp.status_code == 200
+    original_prop = resp.content
+
+    # Apply a 90-degree X rotation to the primary (body) geometry
+    resp = client.post(
+        "/cases/multitransform/transform-geometry",
+        json={"filename": "body.stl", "rotate_x": 90},
+    )
+    assert resp.status_code == 200
+
+    # Read propeller after transform — it should have changed
+    resp = client.get("/cases/multitransform/geometry-file?filename=propeller.stl")
+    assert resp.status_code == 200
+    transformed_prop = resp.content
+
+    assert original_prop != transformed_prop, (
+        "Propeller STL should be transformed when body is rotated"
+    )

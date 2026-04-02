@@ -9,7 +9,11 @@ import pytest
 
 from services.config_generator import (
     BoundingBox,
+    GeometryEntry,
+    MRFZoneConfig,
     generate_block_mesh_dict,
+    generate_cylinder_stl,
+    generate_mrf_properties,
     generate_snappy_hex_mesh_dict,
     generate_surface_feature_extract_dict,
     stl_bounds,
@@ -109,7 +113,7 @@ class TestGenerateBlockMeshDict:
     def test_generate_block_mesh_dict(self):
         """Verify blockMeshDict contains FoamFile header, vertices, blocks, and correct sizing."""
         bbox = self._make_bbox(min_x=-1, min_y=-0.5, min_z=0, max_x=1, max_y=0.5, max_z=0.5)
-        result = generate_block_mesh_dict(bbox, "car.stl")
+        result = generate_block_mesh_dict([GeometryEntry(filename="car.stl", bbox=bbox)])
 
         # FoamFile header present
         assert "FoamFile" in result
@@ -151,7 +155,7 @@ class TestGenerateBlockMeshDict:
             min_x=0, min_y=0, min_z=0,
             max_x=0.1, max_y=0.1, max_z=0.1,
         )
-        result = generate_block_mesh_dict(bbox, "tiny.stl")
+        result = generate_block_mesh_dict([GeometryEntry(filename="tiny.stl", bbox=bbox)])
 
         # With very small geometry, domain should clamp to minimums:
         # x_min = min(0 - 5*0.1, -5) = min(-0.5, -5) = -5
@@ -169,7 +173,7 @@ class TestGenerateBlockMeshDict:
     def test_generate_block_mesh_dict_ground_vehicle(self):
         """Ground vehicle domain: z_min=0, lowerWall is wall type, Y=0 symmetry."""
         bbox = self._make_bbox(min_x=-1, min_y=-0.5, min_z=0, max_x=1, max_y=0.5, max_z=0.5)
-        result = generate_block_mesh_dict(bbox, "car.stl", domain_type="ground_vehicle")
+        result = generate_block_mesh_dict([GeometryEntry(filename="car.stl", bbox=bbox)], domain_type="ground_vehicle")
 
         # z_min should be 0 (ground plane)
         assert "lowerWall" in result
@@ -180,7 +184,7 @@ class TestGenerateBlockMeshDict:
     def test_generate_block_mesh_dict_freestream(self):
         """Freestream domain: symmetric z, lowerWall is patch (not wall), Y=0 symmetry."""
         bbox = self._make_bbox(min_x=-0.5, min_y=-0.3, min_z=-0.1, max_x=0.5, max_y=0.3, max_z=0.2)
-        result = generate_block_mesh_dict(bbox, "plane.stl", domain_type="freestream")
+        result = generate_block_mesh_dict([GeometryEntry(filename="plane.stl", bbox=bbox)], domain_type="freestream")
 
         # lowerWall should be type patch, not wall
         assert "lowerWall" in result
@@ -207,7 +211,7 @@ class TestGenerateSnappyHexMeshDict:
             max_x=2, max_y=0.5, max_z=0.5,
             num_triangles=100,
         )
-        result = generate_snappy_hex_mesh_dict(bbox, "car.stl")
+        result = generate_snappy_hex_mesh_dict([GeometryEntry(filename="car.stl", bbox=bbox)])
 
         # FoamFile header
         assert "FoamFile" in result
@@ -243,7 +247,7 @@ class TestGenerateSnappyHexMeshDict:
 class TestGenerateSurfaceFeatureExtractDict:
     def test_generate_surface_feature_extract_dict(self):
         """Verify output references STL and has extractionMethod."""
-        result = generate_surface_feature_extract_dict("car.stl")
+        result = generate_surface_feature_extract_dict(["car.stl"])
 
         assert "FoamFile" in result
         assert "surfaceFeatureExtractDict" in result
@@ -382,3 +386,202 @@ class TestTransformStlAscii:
 
         assert bb.max_z == pytest.approx(1.0, abs=1e-5)
         assert bb.max_y == pytest.approx(0.0, abs=1e-5)
+
+
+# ---------------------------------------------------------------------------
+# Cylinder STL generator
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateCylinderStl:
+    def test_cylinder_x_axis_triangle_count(self):
+        """X-axis cylinder has 4*32=128 triangles."""
+        raw = generate_cylinder_stl(origin=(0, 0, 0), axis=(1, 0, 0), radius=0.5, half_length=1.0)
+        count = struct.unpack_from("<I", raw, 80)[0]
+        assert count == 128
+
+    def test_cylinder_bounds_x_axis(self):
+        """Cylinder along X axis: X spans origin +/- half_length, Y/Z spans +/- radius."""
+        raw = generate_cylinder_stl(origin=(1.0, 2.0, 3.0), axis=(1, 0, 0), radius=0.5, half_length=0.25)
+        # Parse bounds from raw bytes
+        min_x = min_y = min_z = float("inf")
+        max_x = max_y = max_z = float("-inf")
+        n = struct.unpack_from("<I", raw, 80)[0]
+        offset = 84
+        for _ in range(n):
+            verts = struct.unpack_from("<9f", raw, offset + 12)
+            for i in range(3):
+                x, y, z = verts[i * 3], verts[i * 3 + 1], verts[i * 3 + 2]
+                min_x, max_x = min(min_x, x), max(max_x, x)
+                min_y, max_y = min(min_y, y), max(max_y, y)
+                min_z, max_z = min(min_z, z), max(max_z, z)
+            offset += 50
+
+        assert min_x == pytest.approx(0.75, abs=0.01)
+        assert max_x == pytest.approx(1.25, abs=0.01)
+        assert min_y == pytest.approx(1.5, abs=0.01)
+        assert max_y == pytest.approx(2.5, abs=0.01)
+        assert min_z == pytest.approx(2.5, abs=0.01)
+        assert max_z == pytest.approx(3.5, abs=0.01)
+
+    def test_cylinder_arbitrary_axis(self):
+        """Cylinder along (1,1,0) normalized: should be tilted 45 degrees."""
+        raw = generate_cylinder_stl(origin=(0, 0, 0), axis=(1, 1, 0), radius=0.1, half_length=1.0)
+        count = struct.unpack_from("<I", raw, 80)[0]
+        assert count == 128
+        # Bounds should extend equally in X and Y
+        min_x = min_y = float("inf")
+        max_x = max_y = float("-inf")
+        offset = 84
+        for _ in range(count):
+            verts = struct.unpack_from("<9f", raw, offset + 12)
+            for i in range(3):
+                min_x = min(min_x, verts[i * 3])
+                max_x = max(max_x, verts[i * 3])
+                min_y = min(min_y, verts[i * 3 + 1])
+                max_y = max(max_y, verts[i * 3 + 1])
+            offset += 50
+        # Diagonal axis means X and Y should have similar extent
+        assert abs((max_x - min_x) - (max_y - min_y)) < 0.05
+
+    def test_cylinder_zero_radius_raises(self):
+        """Zero radius should raise ValueError."""
+        with pytest.raises(ValueError, match="positive"):
+            generate_cylinder_stl(origin=(0, 0, 0), axis=(1, 0, 0), radius=0, half_length=1.0)
+
+    def test_cylinder_zero_axis_raises(self):
+        """Zero axis vector should raise ValueError."""
+        with pytest.raises(ValueError, match="zero"):
+            generate_cylinder_stl(origin=(0, 0, 0), axis=(0, 0, 0), radius=0.5, half_length=1.0)
+
+
+# ---------------------------------------------------------------------------
+# MRF properties generator
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateMrfProperties:
+    def test_single_zone(self):
+        """Single MRF zone with correct RPM-to-omega conversion."""
+        result = generate_mrf_properties([
+            MRFZoneConfig(name="propZone", origin=(0.5, 0, 0.1), axis=(1, 0, 0), rpm=2000),
+        ])
+        assert "cellZone    propZone" in result
+        assert "origin      (0.5 0 0.1)" in result
+        assert "axis        (1 0 0)" in result
+        assert "209.4395" in result  # 2000 * 2*pi/60
+        assert "2000 RPM" in result
+        assert "FoamFile" in result
+        assert "MRFProperties" in result
+
+    def test_negative_rpm(self):
+        """Negative RPM produces negative omega."""
+        result = generate_mrf_properties([
+            MRFZoneConfig(name="wheelZone", origin=(0, 0, 0), axis=(0, 1, 0), rpm=-500),
+        ])
+        assert "-52.3599" in result
+        assert "-500 RPM" in result
+
+
+# ---------------------------------------------------------------------------
+# Multi-geometry dict generation
+# ---------------------------------------------------------------------------
+
+
+class TestMultiGeometryDicts:
+    def _body(self, filename="body.stl"):
+        bbox = BoundingBox(min_x=-1, min_y=0, min_z=0, max_x=1, max_y=0.5, max_z=0.5, num_triangles=100)
+        return GeometryEntry(filename=filename, bbox=bbox, role="body")
+
+    def _rotating(self, filename="propeller.stl"):
+        bbox = BoundingBox(min_x=0.3, min_y=-0.1, min_z=-0.05, max_x=0.7, max_y=0.1, max_z=0.25, num_triangles=50)
+        return GeometryEntry(filename=filename, bbox=bbox, role="rotating", refinement_min=6, refinement_max=7)
+
+    def _zone(self, filename="propZone.stl"):
+        bbox = BoundingBox(min_x=0.25, min_y=-0.15, min_z=-0.1, max_x=0.75, max_y=0.15, max_z=0.3, num_triangles=128)
+        return GeometryEntry(filename=filename, bbox=bbox, role="zone", refinement_min=4, refinement_max=4, zone_name="propZone")
+
+    def test_snappy_multi_geometry_entries(self):
+        """snappyHexMeshDict lists all geometries in the geometry section."""
+        entries = [self._body(), self._rotating(), self._zone()]
+        result = generate_snappy_hex_mesh_dict(entries)
+        assert "body.stl" in result
+        assert "propeller.stl" in result
+        assert "propZone.stl" in result
+        assert result.count("triSurfaceMesh") == 3
+
+    def test_snappy_zone_gets_cellzone(self):
+        """Zone geometry gets cellZone/faceZone/cellZoneInside, no patchInfo."""
+        entries = [self._body(), self._zone()]
+        result = generate_snappy_hex_mesh_dict(entries)
+        assert "cellZone propZone;" in result
+        assert "faceZone propZoneFaces;" in result
+        assert "cellZoneInside inside;" in result
+
+    def test_snappy_body_gets_patchinfo(self):
+        """Body geometry gets patchInfo with wall type."""
+        entries = [self._body(), self._zone()]
+        result = generate_snappy_hex_mesh_dict(entries)
+        # Check that body section has patchInfo
+        body_section = result.split("body")[1].split("}")[0]
+        assert "patchInfo" in body_section or "type wall" in result
+
+    def test_snappy_zone_no_patchinfo(self):
+        """Zone geometry should NOT have patchInfo block."""
+        entries = [self._body(), self._zone()]
+        result = generate_snappy_hex_mesh_dict(entries)
+        # Find the propZone refinementSurfaces entry and check it has no patchInfo
+        zone_start = result.index("propZone\n")
+        # Find the closing brace for this entry
+        depth = 0
+        i = result.index("{", zone_start)
+        depth = 1
+        i += 1
+        while depth > 0 and i < len(result):
+            if result[i] == "{": depth += 1
+            elif result[i] == "}": depth -= 1
+            i += 1
+        zone_section = result[zone_start:i]
+        assert "patchInfo" not in zone_section
+
+    def test_block_mesh_full_model_with_zone(self):
+        """When MRF zone present, blockMeshDict uses full domain (no symWall)."""
+        entries = [self._body(), self._zone()]
+        result = generate_block_mesh_dict(entries)
+        assert "symWall" not in result
+        assert "right" in result
+        assert "type symmetry" not in result
+
+    def test_block_mesh_half_model_without_zone(self):
+        """Without MRF zone, blockMeshDict uses half domain (symWall)."""
+        entries = [self._body()]
+        result = generate_block_mesh_dict(entries)
+        assert "symWall" in result
+        assert "type symmetry" in result
+
+    def test_sfe_multi_entries(self):
+        """surfaceFeatureExtractDict has one entry per filename."""
+        result = generate_surface_feature_extract_dict(["body.stl", "propeller.stl", "propZone.stl"])
+        assert result.count("extractionMethod") == 3
+        assert "body.stl" in result
+        assert "propeller.stl" in result
+        assert "propZone.stl" in result
+
+    def test_snappy_features_all_geometries(self):
+        """Features section has .eMesh entry for each geometry."""
+        entries = [self._body(), self._rotating(), self._zone()]
+        result = generate_snappy_hex_mesh_dict(entries)
+        assert "body.eMesh" in result
+        assert "propeller.eMesh" in result
+        assert "propZone.eMesh" in result
+
+    def test_single_geometry_backward_compat(self):
+        """Single-element list produces valid output with symWall."""
+        entries = [self._body()]
+        result = generate_snappy_hex_mesh_dict(entries)
+        assert "body.stl" in result
+        assert "triSurfaceMesh" in result
+        assert "patchInfo" in result
+        assert "cellZone" not in result
+        bmd = generate_block_mesh_dict(entries)
+        assert "symWall" in bmd
