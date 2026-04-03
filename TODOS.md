@@ -2,6 +2,16 @@
 
 ## Deferred
 
+### Generate Ghosted Pressure Map Preview for Drop Zone
+**What:** Run the motorBike template end-to-end, screenshot the pressure field result from VisualizationPanel, export as a semi-transparent PNG for use as the Drop Zone background image.
+**Why:** The Drop Zone design uses a ghosted pressure map preview as its visual anchor (per design review 2026-04-03). Without this image, the drop zone is an empty gray box with no visual proof of what the user will get.
+**Pros:** Instant "this is what you'll get" communication. The preview image IS the brand moment for screenshots and GIFs.
+**Cons:** Requires a successful motorBike run (Docker must be running). Image needs manual opacity adjustment.
+**Context:** Run motorBike template, navigate to Results, screenshot the 3D pressure field at a good angle. Save as PNG. Apply ~15% opacity in CSS (`opacity: 0.15`) as background-image of the drop zone container. Image should be ~1920x1080 for HiDPI Electron.
+**Effort:** XS (CC: ~15 min) | **Priority:** P1
+**Depends on:** Working motorBike template (already exists).
+**Added:** 2026-04-03
+
 ### Extract Spatial Hash Grid Module
 **What:** Extract the spatial hash grid from `streamlines.ts:traceStreamlines()` into its own `lib/spatial-hash.ts` module.
 **Why:** The spatial hash grid (10x10x10 cells, triangle-to-cell mapping) is currently embedded inside `traceStreamlines()`. ParticleRenderer needs the same grid for per-frame velocity lookups. Without extraction, the grid-building logic (~60 lines) would be duplicated.

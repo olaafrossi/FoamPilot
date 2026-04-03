@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from "react";
 import { HashRouter, Routes, Route, Navigate, useNavigate, useLocation } from "react-router-dom";
-import { Rocket, FolderOpen, LayoutDashboard, Terminal, FileText, Settings, Upload, RotateCw } from "lucide-react";
+import { Rocket, FolderOpen, LayoutDashboard, Terminal, FileText, Settings, Upload, RotateCw, Zap } from "lucide-react";
 import { setConfig, syncCoresFromBackend } from "./api";
 import type { AppConfig } from "./types";
 import { StatusProvider, useStatus } from "./hooks/useStatus";
@@ -10,9 +10,11 @@ import WizardPage from "./pages/WizardPage";
 import MySimulationsPage from "./pages/MySimulationsPage";
 import SettingsPage from "./pages/SettingsPage";
 import SetupPage from "./pages/SetupPage";
+import DropZonePage from "./pages/DropZonePage";
 
 const NAV_ITEMS = [
-  { id: "wizard", icon: Rocket, label: "Wizard", path: "/wizard" },
+  { id: "dropzone", icon: Zap, label: "Drop Zone", path: "/" },
+  { id: "wizard", icon: Rocket, label: "Advanced", path: "/wizard" },
   { id: "simulations", icon: FolderOpen, label: "My Simulations", path: "/simulations" },
   { id: "dashboard", icon: LayoutDashboard, label: "Dashboard", path: "/dashboard" },
   { id: "logs", icon: Terminal, label: "Logs", path: "/logs" },
@@ -89,24 +91,27 @@ function AppShell() {
     setGlobalDragOver(false);
     const files = e.dataTransfer.files;
     if (files.length > 0 && files[0].name.toLowerCase().endsWith(".stl")) {
-      // Navigate to wizard — the GeometryStep will handle the file via its own drop zone
-      navigate("/wizard");
+      // Navigate to Drop Zone — it handles the file via its own drop zone
+      navigate("/");
     }
   }, [navigate]);
 
   const activeId = [...NAV_ITEMS, SETTINGS_ITEM].find(
-    (item) => location.pathname.startsWith(item.path),
-  )?.id ?? "wizard";
+    (item) => item.path === "/"
+      ? location.pathname === "/"
+      : location.pathname.startsWith(item.path),
+  )?.id ?? "dropzone";
 
   const sideBarTitle = (() => {
     switch (activeId) {
-      case "wizard": return "EXPLORER";
+      case "dropzone": return "DROP ZONE";
+      case "wizard": return "ADVANCED";
       case "simulations": return "SIMULATIONS";
       case "dashboard": return "DASHBOARD";
       case "logs": return "OUTPUT";
       case "editor": return "EDITOR";
       case "settings": return "SETTINGS";
-      default: return "EXPLORER";
+      default: return "DROP ZONE";
     }
   })();
 
@@ -149,7 +154,7 @@ function AppShell() {
           style={{ width: 48, background: "var(--bg-activitybar)" }}
         >
           {/* FP Logo */}
-          <FPLogo onClick={() => navigate("/wizard")} />
+          <FPLogo onClick={() => navigate("/")} />
 
           {NAV_ITEMS.map((item) => {
             const Icon = item.icon;
@@ -218,9 +223,9 @@ function AppShell() {
           </div>
         </nav>
 
-        {/* Side Bar — 250px, hidden on narrow viewports */}
+        {/* Side Bar — 250px, hidden on narrow viewports and on Drop Zone */}
         <aside
-          className="hidden sm:flex flex-col shrink-0 overflow-y-auto"
+          className={`${activeId === "dropzone" ? "hidden" : "hidden sm:flex"} flex-col shrink-0 overflow-y-auto`}
           style={{ width: 250, background: "var(--bg-sidebar)" }}
         >
           {/* Sidebar header */}
@@ -239,6 +244,11 @@ function AppShell() {
 
           {/* Sidebar content */}
           <div className="flex-1 px-[10px]">
+            {activeId === "dropzone" && (
+              <SideBarSection title="Zero-Config">
+                <SideBarItem label="Drop Zone" active />
+              </SideBarSection>
+            )}
             {activeId === "wizard" && (
               <SideBarSection title="FoamPilot Wizard">
                 <SideBarItem label="New Simulation" active />
@@ -278,13 +288,15 @@ function AppShell() {
           style={{ background: "var(--bg-editor)" }}
         >
           <Routes>
+            <Route path="/" element={<DropZonePage />} />
             <Route path="/wizard" element={<WizardPage />} />
+            <Route path="/advanced" element={<Navigate to="/wizard" replace />} />
             <Route path="/simulations" element={<MySimulationsPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="/dashboard" element={<PlaceholderPage title="Dashboard" />} />
             <Route path="/logs" element={<PlaceholderPage title="Logs" />} />
             <Route path="/editor" element={<PlaceholderPage title="Dict Editor" />} />
-            <Route path="*" element={<Navigate to="/wizard" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </main>
       </div>
