@@ -96,7 +96,7 @@ export async function getJobStatus(jobId: string): Promise<{ status: string; exi
 }
 
 export async function cancelJob(jobId: string): Promise<void> {
-  await fetch(api(`/jobs/${jobId}/cancel`), { method: "POST" });
+  await fetch(api(`/jobs/${jobId}`), { method: "DELETE" });
 }
 
 export async function getMeshQuality(caseName: string): Promise<MeshQuality> {

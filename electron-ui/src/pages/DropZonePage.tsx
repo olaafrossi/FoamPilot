@@ -206,6 +206,28 @@ function TemplateCard({ template, onClick }: { template: Template; onClick: () =
 }
 
 // ---------------------------------------------------------------------------
+// Residual sparkline (top-level to avoid re-creation on every render)
+// ---------------------------------------------------------------------------
+
+function ResidualSparkline({ data }: { data: number[] }) {
+  if (data.length < 2) return null;
+  const h = 20;
+  const w = 80;
+  const logData = data.map((v) => (v > 0 ? Math.log10(v) : -10));
+  const min = Math.min(...logData);
+  const max = Math.max(...logData);
+  const range = max - min || 1;
+  const points = logData
+    .map((v, i) => `${(i / (logData.length - 1)) * w},${h - ((v - min) / range) * h}`)
+    .join(" ");
+  return (
+    <svg width={w} height={h} style={{ display: "inline-block", verticalAlign: "middle" }}>
+      <polyline points={points} fill="none" stroke="var(--accent)" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Main Component
 // ---------------------------------------------------------------------------
 
@@ -225,7 +247,7 @@ export default function DropZonePage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Pipeline state
-  const [currentStep, setCurrentStep] = useState<PipelineStep>("uploading");
+  const [currentStep, setCurrentStepRaw] = useState<PipelineStep>("uploading");
   const [steps, setSteps] = useState<Record<PipelineStep, StepStatus>>({
     uploading: { state: "pending", label: "Uploading geometry" },
     classifying: { state: "pending", label: "Classifying geometry" },
@@ -246,6 +268,13 @@ export default function DropZonePage() {
   const currentJobRef = useRef<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const cancelledRef = useRef(false);
+  const currentStepRef = useRef<PipelineStep>("uploading");
+  const logLinesRef = useRef<string[]>([]);
+
+  const setCurrentStep = useCallback((step: PipelineStep) => {
+    currentStepRef.current = step;
+    setCurrentStepRaw(step);
+  }, []);
 
   // Results state
   const [results, setResults] = useState<AeroResults | null>(null);
@@ -315,34 +344,51 @@ export default function DropZonePage() {
     cName: string,
     commands: string[],
     onLine?: (line: string) => void,
+    timeoutMs: number = 600_000, // 10 minute default timeout
   ): Promise<{ exitCode: number; lines: string[] }> => {
     const job = await runCommands(cName, commands);
     currentJobRef.current = job.job_id;
     const collectedLines: string[] = [];
 
     return new Promise((resolve, reject) => {
+      const cleanup = () => {
+        clearInterval(pollId);
+        clearInterval(logSyncId);
+        clearTimeout(timeoutId);
+        ws.close();
+        wsRef.current = null;
+        currentJobRef.current = null;
+      };
+
       const ws = connectLogs(job.job_id, (line) => {
         collectedLines.push(line);
-        setLogLines((prev) => [...prev, line]);
+        logLinesRef.current.push(line);
         onLine?.(line);
       });
+      // Sync log lines to React state at 2Hz (avoids O(n^2) array copies per message)
+      const logSyncId = setInterval(() => {
+        setLogLines([...logLinesRef.current]);
+      }, 500);
       wsRef.current = ws;
 
+      // Timeout guard to prevent infinite hangs
+      const timeoutId = setTimeout(() => {
+        cleanup();
+        reject(new Error(`Command timed out after ${timeoutMs / 1000}s`));
+      }, timeoutMs);
+
       // Poll for job completion
-      const poll = setInterval(async () => {
+      const pollId = setInterval(async () => {
         if (cancelledRef.current) {
-          clearInterval(poll);
-          ws.close();
+          cleanup();
           reject(new Error("Cancelled"));
           return;
         }
         try {
           const status = await getJobStatus(job.job_id);
           if (status.status === "completed" || status.status === "failed") {
-            clearInterval(poll);
-            ws.close();
-            wsRef.current = null;
-            currentJobRef.current = null;
+            cleanup();
+            setLogLines([...logLinesRef.current]); // final sync
             resolve({ exitCode: status.exit_code ?? (status.status === "completed" ? 0 : 1), lines: collectedLines });
           }
         } catch {
@@ -358,6 +404,7 @@ export default function DropZonePage() {
 
   const runPipeline = useCallback(async (file: File | null, templateName?: string) => {
     cancelledRef.current = false;
+    logLinesRef.current = [];
     setPageState("processing");
     setLogLines([]);
     setSolverIteration(0);
@@ -396,8 +443,8 @@ export default function DropZonePage() {
       await createCase(cName, templateName || "motorBike");
 
       if (file) {
-        // Check scale: if bounds > 100m, likely mm
-        const uploadResult = await uploadGeometry(cName, file, 1.0, templateName || "motorBike");
+        // Upload geometry, then check if scale conversion is needed
+        let uploadResult = await uploadGeometry(cName, file, 1.0, templateName || "motorBike");
         const bounds = uploadResult.bounds;
         const maxDim = Math.max(
           bounds.max[0] - bounds.min[0],
@@ -405,8 +452,9 @@ export default function DropZonePage() {
           bounds.max[2] - bounds.min[2],
         );
         if (maxDim > 100) {
+          // Likely millimeters — re-upload with scale conversion
           setScaleToast("Detected millimeter scale. Auto-converting to meters.");
-          await uploadGeometry(cName, file, 0.001, templateName || "motorBike");
+          uploadResult = await uploadGeometry(cName, file, 0.001, templateName || "motorBike");
           setTimeout(() => setScaleToast(null), 5000);
         }
         markDone("uploading", `${uploadResult.filename} — ${uploadResult.triangles.toLocaleString()} triangles`);
@@ -514,10 +562,13 @@ export default function DropZonePage() {
       });
 
       if (solveResult.exitCode !== 0 && !cancelledRef.current) throw new Error("simpleFoam failed");
-      markDone("solving", cancelledRef.current ? "Diverged — showing partial results" : undefined);
+      const diverged = cancelledRef.current;
+      // Reset cancelled flag so divergence doesn't block result loading
+      if (diverged) cancelledRef.current = false;
+      markDone("solving", diverged ? "Diverged — showing partial results" : undefined);
       setPipelineProgress(92);
 
-      // Step 6: Load results
+      // Step 6: Load results (attempt even after divergence for partial results)
       setCurrentStep("loading_results");
       markRunning("loading_results");
       const aeroResults = await getResults(cName);
@@ -537,12 +588,12 @@ export default function DropZonePage() {
         return;
       }
 
-      markError(currentStep);
-      setErrorInfo(diagnoseError(currentStep, logLines));
+      markError(currentStepRef.current);
+      setErrorInfo(diagnoseError(currentStepRef.current, logLinesRef.current));
       setPageState("error");
       setGlobalError(errMsg);
     }
-  }, [stopwatch, markRunning, markDone, markError, runAndWait, setGlobalError, currentStep, logLines, updateStep]);
+  }, [stopwatch, markRunning, markDone, markError, runAndWait, setGlobalError, setCurrentStep, updateStep]);
 
   // -------------------------------------------------------------------------
   // Drop handlers
@@ -550,6 +601,7 @@ export default function DropZonePage() {
 
   const handleFiles = useCallback((files: FileList) => {
     if (files.length === 0) return;
+    if (pageState !== "idle") return; // Guard against double-drop while pipeline is running
     const file = files[0];
     if (!file.name.toLowerCase().endsWith(".stl")) {
       setInvalidFile(true);
@@ -614,28 +666,6 @@ export default function DropZonePage() {
   }, []);
 
   // -------------------------------------------------------------------------
-  // Residual sparkline (simple inline SVG)
-  // -------------------------------------------------------------------------
-
-  function ResidualSparkline({ data }: { data: number[] }) {
-    if (data.length < 2) return null;
-    const h = 20;
-    const w = 80;
-    const logData = data.map((v) => (v > 0 ? Math.log10(v) : -10));
-    const min = Math.min(...logData);
-    const max = Math.max(...logData);
-    const range = max - min || 1;
-    const points = logData
-      .map((v, i) => `${(i / (logData.length - 1)) * w},${h - ((v - min) / range) * h}`)
-      .join(" ");
-    return (
-      <svg width={w} height={h} style={{ display: "inline-block", verticalAlign: "middle" }}>
-        <polyline points={points} fill="none" stroke="var(--accent)" strokeWidth="1.5" />
-      </svg>
-    );
-  }
-
-  // -------------------------------------------------------------------------
   // Render: IDLE state
   // -------------------------------------------------------------------------
 
@@ -673,10 +703,8 @@ export default function DropZonePage() {
                 ? "2px solid var(--accent)"
                 : "2px dashed var(--border)",
             background: dragOver ? "var(--accent-bg)" : "transparent",
-            outline: "none",
+            outlineOffset: 2,
           }}
-          onFocus={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = "0 0 0 2px var(--accent)"; }}
-          onBlur={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = "none"; }}
         >
           {invalidFile ? (
             <>
@@ -745,12 +773,6 @@ export default function DropZonePage() {
   // -------------------------------------------------------------------------
 
   if (pageState === "processing") {
-    const stepOrder: PipelineStep[] = [
-      "uploading", "classifying", "configuring",
-      "meshing_sfe", "meshing_block", "meshing_snappy",
-      "solving", "loading_results",
-    ];
-
     // Group steps for display
     const displayGroups = [
       { label: "Upload & Classify", steps: ["uploading", "classifying"] as PipelineStep[] },
