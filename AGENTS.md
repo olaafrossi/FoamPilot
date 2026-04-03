@@ -1,29 +1,40 @@
-# FoamPilot
+# Agent Instructions
 
-Aerodynamics made simple — guided OpenFOAM simulations.
+This project uses **bd** (beads) for issue tracking. Run `bd prime` for full workflow context.
 
-## Architecture
+## Quick Reference
 
-- **Frontend:** Electron + React (TypeScript) in `electron-ui/`
-- **Backend:** FastAPI (Python) in `backend/`
-- **Infrastructure:** Docker + Docker Compose in `docker/`
+```bash
+bd ready              # Find available work
+bd show <id>          # View issue details
+bd update <id> --claim  # Claim work atomically
+bd close <id>         # Complete work
+bd dolt push          # Push beads data to remote
+```
 
-## gstack Skills
+## Non-Interactive Shell Commands
 
-gstack is installed in `.claude/skills/gstack`. Available slash commands:
+**ALWAYS use non-interactive flags** with file operations to avoid hanging on confirmation prompts.
 
-- `/plan-ceo-review` — CEO-level product review
-- `/plan-eng-review` — Engineering manager architecture review
-- `/plan-design-review` — Design review
-- `/review` — Code review
-- `/qa` — QA with real browser testing
-- `/ship` — Ship checklist
-- `/browse` — Browser-based testing and dogfooding
-- `/investigate` — Deep investigation of issues
-- `/retro` — Post-mortem retrospective
+Shell commands like `cp`, `mv`, and `rm` may be aliased to include `-i` (interactive) mode on some systems, causing the agent to hang indefinitely waiting for y/n input.
 
-Use `/browse` from gstack for all web browsing tasks.
+**Use these forms instead:**
+```bash
+# Force overwrite without prompting
+cp -f source dest           # NOT: cp source dest
+mv -f source dest           # NOT: mv source dest
+rm -f file                  # NOT: rm file
 
+# For recursive operations
+rm -rf directory            # NOT: rm -r directory
+cp -rf source dest          # NOT: cp -r source dest
+```
+
+**Other commands that may prompt:**
+- `scp` - use `-o BatchMode=yes` for non-interactive
+- `ssh` - use `-o BatchMode=yes` to fail instead of prompting
+- `apt-get` - use `-y` flag
+- `brew` - use `HOMEBREW_NO_AUTO_UPDATE=1` env var
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
 ## Beads Issue Tracker
