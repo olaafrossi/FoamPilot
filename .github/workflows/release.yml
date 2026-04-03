@@ -136,11 +136,11 @@ jobs:
             [ -d "$dir" ] || continue
             for file in "$dir"*; do
               [ -f "$file" ] || continue
-              base=$(basename "$file")
-              cp "$file" "./releases/${base}"
+              cp "$file" "./releases/$(basename "$file")"
             done
           done
-          ls -la ./releases/
+          echo "── Release artifacts ──"
+          ls -lh ./releases/
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
