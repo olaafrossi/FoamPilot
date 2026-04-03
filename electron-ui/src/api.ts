@@ -1,4 +1,4 @@
-import type { AppConfig, Template, JobResponse, MeshQuality, AeroResults, CaseInfo, FieldData, AeroSuggestions, GeometryClassification, YPlusResult, ReynoldsResult } from "./types";
+import type { AppConfig, Template, JobResponse, MeshQuality, AeroResults, CaseInfo, FieldData, AeroSuggestions, GeometryClassification, YPlusResult, ReynoldsResult, GeometryListResponse, MRFZone } from "./types";
 
 let config: AppConfig = {
   backendUrl: "http://127.0.0.1:8000",
@@ -136,6 +136,7 @@ export async function uploadGeometry(
 export async function transformGeometry(
   caseName: string,
   transform: {
+    filename?: string;
     rotate_x?: number;
     rotate_y?: number;
     rotate_z?: number;
@@ -244,6 +245,77 @@ export async function getSliceData(
   );
   if (!res.ok) throw new Error(`Failed to get slice data: ${res.statusText}`);
   return res.json();
+}
+
+// ---------------------------------------------------------------------------
+// Multi-geometry + MRF
+// ---------------------------------------------------------------------------
+
+export async function getGeometries(caseName: string): Promise<GeometryListResponse> {
+  const res = await fetch(api(`/cases/${caseName}/geometries`));
+  if (!res.ok) throw new Error(`Failed to get geometries: ${res.statusText}`);
+  return res.json();
+}
+
+export async function addGeometry(
+  caseName: string,
+  file: File,
+  scale: number = 1.0,
+  role: string = "body",
+  refinementMin: number = 5,
+  refinementMax: number = 6,
+): Promise<{ filename: string; triangles: number | null; bounds: { min: number[]; max: number[] } | null }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("scale", scale.toString());
+  formData.append("role", role);
+  formData.append("refinement_min", refinementMin.toString());
+  formData.append("refinement_max", refinementMax.toString());
+  const res = await fetch(api(`/cases/${caseName}/add-geometry`), { method: "POST", body: formData });
+  if (!res.ok) {
+    const detail = await res.json().then(j => j.detail).catch(() => res.statusText);
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+export async function removeGeometry(caseName: string, filename: string): Promise<void> {
+  const res = await fetch(api(`/cases/${caseName}/geometry/${encodeURIComponent(filename)}`), { method: "DELETE" });
+  if (!res.ok) throw new Error(`Failed to remove geometry: ${res.statusText}`);
+}
+
+export async function createMRFZone(
+  caseName: string,
+  zone: {
+    zone_name: string;
+    geometry: string;
+    origin: [number, number, number];
+    axis: [number, number, number];
+    rpm: number;
+    radius: number;
+    half_length: number;
+  },
+): Promise<{ zone_name: string; zone_stl: string; omega: number }> {
+  const res = await fetch(api(`/cases/${caseName}/mrf-zones`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(zone),
+  });
+  if (!res.ok) {
+    const detail = await res.json().then(j => j.detail).catch(() => res.statusText);
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
+export async function removeMRFZone(caseName: string, zoneName: string): Promise<void> {
+  const res = await fetch(api(`/cases/${caseName}/mrf-zones/${encodeURIComponent(zoneName)}`), { method: "DELETE" });
+  if (!res.ok) throw new Error(`Failed to remove MRF zone: ${res.statusText}`);
+}
+
+export async function regenerateDicts(caseName: string): Promise<void> {
+  const res = await fetch(api(`/cases/${caseName}/regenerate-dicts`), { method: "POST" });
+  if (!res.ok) throw new Error(`Failed to regenerate dicts: ${res.statusText}`);
 }
 
 export function connectLogs(jobId: string, onLine: (line: string, stream: string) => void): WebSocket {

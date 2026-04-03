@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { fetchTemplates, createCase, uploadGeometry, transformGeometry } from "../api";
-import type { Template } from "../types";
+import { fetchTemplates, createCase, uploadGeometry, transformGeometry, getGeometries, addGeometry, removeGeometry, createMRFZone, removeMRFZone } from "../api";
+import type { Template, GeometryEntry as GeoEntry, MRFZone } from "../types";
 import MeshPreview from "../components/MeshPreview";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import * as THREE from "three";
@@ -76,6 +76,42 @@ export default function GeometryStep({
   } | null>(null);
   const [previewKey, setPreviewKey] = useState(0);
   const [transforming, setTransforming] = useState(false);
+
+  // Multi-geometry + MRF state
+  const [geoList, setGeoList] = useState<GeoEntry[]>([]);
+  const [mrfZones, setMrfZones] = useState<MRFZone[]>([]);
+  const [addingGeo, setAddingGeo] = useState(false);
+  const [expandedGeo, setExpandedGeo] = useState<string | null>(null);
+  const [mrfPlaying, setMrfPlaying] = useState(false);
+  const [mrfRpm, setMrfRpm] = useState(2000);
+  const [mrfAxis, setMrfAxis] = useState<"X" | "Y" | "Z">("X");
+  const [mrfRadius, setMrfRadius] = useState(0.15);
+  const [mrfHalfLength, setMrfHalfLength] = useState(0.025);
+
+  // Fetch geometry list when case exists
+  const refreshGeometries = useCallback(async () => {
+    if (!caseName) return;
+    try {
+      const data = await getGeometries(caseName);
+      setGeoList(data.geometries || []);
+      setMrfZones(data.mrf_zones || []);
+    } catch { /* case may not have geometries.json yet */ }
+  }, [caseName]);
+
+  useEffect(() => { refreshGeometries(); }, [refreshGeometries]);
+
+  // Seed MRF input fields from existing zone data
+  useEffect(() => {
+    if (mrfZones.length > 0) {
+      const z = mrfZones[0];
+      setMrfRpm(z.rpm);
+      setMrfRadius(z.radius);
+      setMrfHalfLength(z.half_length);
+      if (z.axis[0] === 1) setMrfAxis("X");
+      else if (z.axis[1] === 1) setMrfAxis("Y");
+      else setMrfAxis("Z");
+    }
+  }, [mrfZones.length]); // Only re-seed when zone count changes (not on every render)
 
   // Parse pending STL client-side to get raw dimensions for scale preview
   useEffect(() => {
@@ -193,6 +229,12 @@ export default function GeometryStep({
         const info = await uploadGeometry(name, pendingFile, unitOption.scale, selected.path);
         setUploadInfo(info);
         setPendingFile(null);
+        // Refresh geometry list after first upload
+        try {
+          const geoData = await getGeometries(name);
+          setGeoList(geoData.geometries || []);
+          setMrfZones(geoData.mrf_zones || []);
+        } catch { /* geometries.json may not exist yet for template cases */ }
       }
 
       setCaseName(name);
@@ -226,15 +268,20 @@ export default function GeometryStep({
     setTransforming(true);
     setCreateError(null);
     try {
-      const info = await transformGeometry(caseName, transform);
+      // Pass the primary geometry filename so it doesn't pick the wrong STL
+      const info = await transformGeometry(caseName, {
+        filename: uploadInfo?.filename,
+        ...transform,
+      });
       setUploadInfo((prev) => prev ? { ...prev, bounds: info.bounds, y_stats: info.y_stats } : prev);
+      await refreshGeometries();
       setPreviewKey((k) => k + 1);
     } catch (e: unknown) {
       setCreateError(e instanceof Error ? e.message : "Failed to transform geometry");
     } finally {
       setTransforming(false);
     }
-  }, [caseName]);
+  }, [caseName, uploadInfo?.filename, refreshGeometries]);
 
   // Keyboard navigation
   const selectableItems = [...simulations, ...verification].filter(isAvailable);
@@ -589,7 +636,18 @@ export default function GeometryStep({
 
                 {/* 3D preview */}
                 <div style={{ height: 250, border: "1px solid var(--border)", borderRadius: 2, overflow: "hidden" }}>
-                  <MeshPreview caseName={caseName} refreshKey={previewKey} />
+                  <MeshPreview
+                    caseName={caseName}
+                    refreshKey={previewKey}
+                    geometries={geoList.length > 0 ? geoList.filter(g => !g.zone_name).map(g => ({
+                      filename: g.filename,
+                      role: g.role,
+                      color: g.role === "rotating" ? "#e8943a" : "#6a9fd8",
+                    })) : undefined}
+                    mrfZones={mrfZones.length > 0 ? mrfZones : undefined}
+                    playing={mrfPlaying}
+                    onPlayToggle={mrfZones.length > 0 ? () => setMrfPlaying(p => !p) : undefined}
+                  />
                 </div>
 
                 {/* Bounding box readout */}
@@ -761,6 +819,331 @@ export default function GeometryStep({
                       </>
                     )}
                   </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── Multi-geometry: Add Geometry + Geometry List + MRF Config ── */}
+            {uploadInfo && caseName && (
+              <div style={{ marginTop: 16 }}>
+                {/* Geometry list */}
+                {geoList.length > 0 && (
+                  <div style={{ marginBottom: 12 }}>
+                    <p style={{ fontSize: 11, fontWeight: 600, color: "var(--fg-muted)", marginBottom: 6 }}>
+                      Geometries ({geoList.length})
+                    </p>
+                    {geoList.filter(g => !g.zone_name).map((g) => {
+                      const isExpanded = expandedGeo === g.filename;
+                      const doTransform = async (t: Record<string, number>) => {
+                        setTransforming(true);
+                        setCreateError(null);
+                        try {
+                          await transformGeometry(caseName!, { filename: g.filename, ...t });
+                          await refreshGeometries();
+                          setPreviewKey(k => k + 1);
+                        } catch (err) {
+                          setCreateError(err instanceof Error ? err.message : "Transform failed");
+                        } finally {
+                          setTransforming(false);
+                        }
+                      };
+                      return (
+                        <div
+                          key={g.filename}
+                          style={{
+                            marginBottom: 4,
+                            background: "var(--bg-elevated)",
+                            border: `1px solid ${isExpanded ? "var(--accent)" : "var(--border)"}`,
+                            borderRadius: 2,
+                          }}
+                        >
+                          {/* Header row */}
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", fontSize: 12 }}>
+                            <span
+                              style={{
+                                width: 8, height: 8, borderRadius: "50%",
+                                background: g.role === "rotating" ? "#e8943a" : "#6a9fd8",
+                                flexShrink: 0,
+                              }}
+                            />
+                            <span
+                              style={{ flex: 1, color: "var(--fg)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer" }}
+                              onClick={() => setExpandedGeo(isExpanded ? null : g.filename)}
+                              title="Click to expand transform controls"
+                            >
+                              {g.filename}
+                              <span style={{ fontSize: 10, color: "var(--fg-muted)", marginLeft: 4 }}>
+                                {isExpanded ? "\u25B2" : "\u25BC"}
+                              </span>
+                            </span>
+                            <select
+                              value={g.role === "rotating" ? "rotating" : "body"}
+                              onChange={async (e) => {
+                                const newRole = e.target.value;
+                                if (newRole === "rotating" && g.role !== "rotating") {
+                                  // Expand the geometry to show MRF config — don't create zone yet
+                                  setExpandedGeo(g.filename);
+                                  // Seed defaults from geometry bounds
+                                  const bounds = g.bounds;
+                                  const sx = bounds ? bounds.max[0] - bounds.min[0] : 0.3;
+                                  const sy = bounds ? bounds.max[1] - bounds.min[1] : 0.3;
+                                  const sz = bounds ? bounds.max[2] - bounds.min[2] : 0.3;
+                                  const maxDim = Math.max(sx, sy, sz);
+                                  setMrfRadius(Math.round(maxDim * 0.575 * 1000) / 1000);
+                                  setMrfHalfLength(Math.round(maxDim * 0.1 * 1000) / 1000);
+                                  // Create the zone immediately with defaults so role is persisted
+                                  try {
+                                    const cx = bounds ? (bounds.min[0] + bounds.max[0]) / 2 : 0;
+                                    const cy = bounds ? (bounds.min[1] + bounds.max[1]) / 2 : 0;
+                                    const cz = bounds ? (bounds.min[2] + bounds.max[2]) / 2 : 0;
+                                    const axisVec = mrfAxis === "X" ? [1,0,0] : mrfAxis === "Y" ? [0,1,0] : [0,0,1];
+                                    const zoneName = `${g.filename.replace(/\.stl$/i, "")}Zone`;
+                                    await createMRFZone(caseName!, {
+                                      zone_name: zoneName, geometry: g.filename,
+                                      origin: [cx, cy, cz] as [number, number, number],
+                                      axis: axisVec as [number, number, number],
+                                      rpm: mrfRpm,
+                                      radius: Math.round(maxDim * 0.575 * 1000) / 1000,
+                                      half_length: Math.round(maxDim * 0.1 * 1000) / 1000,
+                                    });
+                                    await refreshGeometries();
+                                    setPreviewKey(k => k + 1);
+                                  } catch (err) {
+                                    setCreateError(err instanceof Error ? err.message : "Failed to create MRF zone");
+                                  }
+                                } else if (newRole === "body" && g.role === "rotating" && g.mrf_zone) {
+                                  try {
+                                    await removeMRFZone(caseName!, g.mrf_zone);
+                                    await refreshGeometries();
+                                    setPreviewKey(k => k + 1);
+                                  } catch (err) {
+                                    setCreateError(err instanceof Error ? err.message : "Failed to remove MRF zone");
+                                  }
+                                }
+                              }}
+                              style={{ fontSize: 11, padding: "2px 4px", background: "var(--bg-sidebar)", color: "var(--fg)", border: "1px solid var(--border)", borderRadius: 2 }}
+                            >
+                              <option value="body">Body</option>
+                              <option value="rotating">Rotating</option>
+                            </select>
+                            {geoList.filter(gg => !gg.zone_name).length > 1 && (
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    await removeGeometry(caseName!, g.filename);
+                                    await refreshGeometries();
+                                    setPreviewKey(k => k + 1);
+                                  } catch (err) {
+                                    setCreateError(err instanceof Error ? err.message : "Failed to remove geometry");
+                                  }
+                                }}
+                                style={{ background: "none", border: "none", color: "var(--fg-muted)", cursor: "pointer", fontSize: 14, padding: "0 2px" }}
+                                aria-label={`Remove ${g.filename}`}
+                              >
+                                &times;
+                              </button>
+                            )}
+                          </div>
+
+                          {/* Expandable transform controls */}
+                          {isExpanded && (
+                            <div style={{ padding: "4px 8px 8px", borderTop: "1px solid var(--border)" }}>
+                              <p style={{ fontSize: 10, fontWeight: 600, color: "var(--fg-muted)", marginBottom: 4 }}>
+                                Rotate 90&deg; {transforming && <span style={{ color: "var(--fg-muted)" }}> Applying...</span>}
+                              </p>
+                              <div style={{ display: "flex", gap: 3, flexWrap: "wrap", marginBottom: 6 }}>
+                                {(["X", "Y", "Z"] as const).flatMap(axis => [
+                                  { label: `${axis} +90°`, key: `rotate_${axis.toLowerCase()}`, val: 90 },
+                                  { label: `${axis} -90°`, key: `rotate_${axis.toLowerCase()}`, val: -90 },
+                                ]).map(({ label, key, val }) => (
+                                  <TransformBtn key={label} label={label} disabled={transforming} onClick={() => doTransform({ [key]: val })} />
+                                ))}
+                              </div>
+                              <p style={{ fontSize: 10, fontWeight: 600, color: "var(--fg-muted)", marginBottom: 4 }}>Translate</p>
+                              <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+                                {g.bounds && (
+                                  <>
+                                    <TransformBtn label="Center X" disabled={transforming} onClick={() => {
+                                      const cx = (g.bounds!.min[0] + g.bounds!.max[0]) / 2;
+                                      if (Math.abs(cx) > 0.001) doTransform({ translate_x: -cx });
+                                    }} />
+                                    <TransformBtn label="Center Y" disabled={transforming} onClick={() => {
+                                      const cy = (g.bounds!.min[1] + g.bounds!.max[1]) / 2;
+                                      if (Math.abs(cy) > 0.001) doTransform({ translate_y: -cy });
+                                    }} />
+                                    <TransformBtn label="Snap Z=0" disabled={transforming} onClick={() => {
+                                      const mz = g.bounds!.min[2];
+                                      if (Math.abs(mz) > 0.001) doTransform({ translate_z: -mz });
+                                    }} />
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    {/* MRF zone config for rotating geometries */}
+                    {mrfZones.map((zone) => {
+                      // Find the geometry this zone belongs to
+                      const rotGeo = geoList.find(gg => gg.mrf_zone === zone.name);
+                      return (
+                        <div
+                          key={zone.name}
+                          style={{
+                            padding: "8px 10px",
+                            marginTop: 4,
+                            background: "var(--bg-elevated)",
+                            border: "1px solid #4ade8044",
+                            borderRadius: 2,
+                            fontSize: 11,
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: 4, marginBottom: 6 }}>
+                            <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#4ade80", flexShrink: 0 }} />
+                            <span style={{ fontWeight: 600, color: "var(--fg)" }}>MRF: {zone.name}</span>
+                          </div>
+
+                          {/* Editable MRF parameters */}
+                          <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "4px 8px", alignItems: "center", fontFamily: "var(--font-mono, monospace)" }}>
+                            <label style={{ color: "var(--fg-muted)", fontSize: 10, fontWeight: 600 }}>RPM</label>
+                            <input
+                              type="number"
+                              value={mrfRpm}
+                              onChange={(e) => setMrfRpm(Number(e.target.value) || 0)}
+                              style={{ width: 80, fontSize: 11, padding: "2px 4px", background: "var(--bg-sidebar)", color: "var(--fg)", border: "1px solid var(--border)", borderRadius: 2, fontFamily: "var(--font-mono, monospace)" }}
+                            />
+
+                            <label style={{ color: "var(--fg-muted)", fontSize: 10, fontWeight: 600 }}>Axis</label>
+                            <div style={{ display: "flex", gap: 4 }}>
+                              {(["X", "Y", "Z"] as const).map((a) => (
+                                <button
+                                  key={a}
+                                  onClick={() => setMrfAxis(a)}
+                                  style={{
+                                    fontSize: 11, padding: "2px 8px", borderRadius: 2, cursor: "pointer",
+                                    border: `1px solid ${mrfAxis === a ? "#4ade80" : "var(--border)"}`,
+                                    background: mrfAxis === a ? "#4ade8033" : "var(--bg-sidebar)",
+                                    color: mrfAxis === a ? "#4ade80" : "var(--fg-muted)",
+                                    fontWeight: mrfAxis === a ? 600 : 400,
+                                  }}
+                                >
+                                  {a}
+                                </button>
+                              ))}
+                            </div>
+
+                            <label style={{ color: "var(--fg-muted)", fontSize: 10, fontWeight: 600 }}>Radius</label>
+                            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                              <input
+                                type="number"
+                                step="0.001"
+                                value={mrfRadius}
+                                onChange={(e) => setMrfRadius(Number(e.target.value) || 0)}
+                                style={{ width: 80, fontSize: 11, padding: "2px 4px", background: "var(--bg-sidebar)", color: "var(--fg)", border: "1px solid var(--border)", borderRadius: 2, fontFamily: "var(--font-mono, monospace)" }}
+                              />
+                              <span style={{ color: "var(--fg-muted)", fontSize: 10 }}>m</span>
+                            </div>
+
+                            <label style={{ color: "var(--fg-muted)", fontSize: 10, fontWeight: 600 }}>Depth</label>
+                            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                              <input
+                                type="number"
+                                step="0.001"
+                                value={mrfHalfLength}
+                                onChange={(e) => setMrfHalfLength(Number(e.target.value) || 0)}
+                                style={{ width: 80, fontSize: 11, padding: "2px 4px", background: "var(--bg-sidebar)", color: "var(--fg)", border: "1px solid var(--border)", borderRadius: 2, fontFamily: "var(--font-mono, monospace)" }}
+                              />
+                              <span style={{ color: "var(--fg-muted)", fontSize: 10 }}>m (half-length)</span>
+                            </div>
+                          </div>
+
+                          {/* Update button — shown when values differ from stored zone */}
+                          {(zone.rpm !== mrfRpm
+                            || zone.radius !== mrfRadius
+                            || zone.half_length !== mrfHalfLength
+                            || (mrfAxis === "X" ? zone.axis[0] !== 1 : mrfAxis === "Y" ? zone.axis[1] !== 1 : zone.axis[2] !== 1)
+                          ) && (
+                            <button
+                              onClick={async () => {
+                                if (!caseName || !rotGeo) return;
+                                try {
+                                  await removeMRFZone(caseName, zone.name);
+                                  const bounds = rotGeo.bounds;
+                                  const cx = bounds ? (bounds.min[0] + bounds.max[0]) / 2 : zone.origin[0];
+                                  const cy = bounds ? (bounds.min[1] + bounds.max[1]) / 2 : zone.origin[1];
+                                  const cz = bounds ? (bounds.min[2] + bounds.max[2]) / 2 : zone.origin[2];
+                                  const axisVec = mrfAxis === "X" ? [1,0,0] : mrfAxis === "Y" ? [0,1,0] : [0,0,1];
+                                  await createMRFZone(caseName, {
+                                    zone_name: zone.name, geometry: rotGeo.filename,
+                                    origin: [cx, cy, cz] as [number, number, number],
+                                    axis: axisVec as [number, number, number],
+                                    rpm: mrfRpm, radius: mrfRadius, half_length: mrfHalfLength,
+                                  });
+                                  await refreshGeometries();
+                                  setPreviewKey(k => k + 1);
+                                } catch (err) {
+                                  setCreateError(err instanceof Error ? err.message : "Failed to update MRF zone");
+                                }
+                              }}
+                              style={{
+                                marginTop: 6, padding: "4px 12px", fontSize: 11, fontWeight: 600,
+                                background: "#4ade8022", border: "1px solid #4ade80", borderRadius: 2,
+                                color: "#4ade80", cursor: "pointer",
+                              }}
+                            >
+                              Update MRF Zone
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* Add Geometry button */}
+                <div
+                  style={{
+                    border: "1px dashed var(--border)",
+                    borderRadius: 2,
+                    padding: addingGeo ? "8px 12px" : "10px 12px",
+                    textAlign: "center",
+                    cursor: addingGeo ? "wait" : "pointer",
+                    transition: "border-color 150ms",
+                  }}
+                  onClick={() => {
+                    if (addingGeo) return;
+                    const input = document.createElement("input");
+                    input.type = "file";
+                    input.accept = ".stl";
+                    input.onchange = async () => {
+                      if (!input.files?.[0] || !caseName) return;
+                      setAddingGeo(true);
+                      setCreateError(null);
+                      try {
+                        const unitOption = UNIT_OPTIONS.find(u => u.value === stlUnit) ?? UNIT_OPTIONS[0];
+                        await addGeometry(caseName, input.files[0], unitOption.scale);
+                        await refreshGeometries();
+                        setPreviewKey(k => k + 1);
+                      } catch (err) {
+                        setCreateError(err instanceof Error ? err.message : "Failed to add geometry");
+                      } finally {
+                        setAddingGeo(false);
+                      }
+                    };
+                    input.click();
+                  }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--accent)"; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.borderColor = "var(--border)"; }}
+                >
+                  {addingGeo ? (
+                    <span style={{ fontSize: 12, color: "var(--fg-muted)" }}>Uploading...</span>
+                  ) : (
+                    <span style={{ fontSize: 12, color: "var(--fg-muted)" }}>
+                      + Add Geometry (propeller, wheel, etc.)
+                    </span>
+                  )}
                 </div>
               </div>
             )}

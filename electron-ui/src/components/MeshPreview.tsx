@@ -1,17 +1,40 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Canvas, useThree } from "@react-three/fiber";
+import { Canvas, useThree, useFrame } from "@react-three/fiber";
 import { OrbitControls, Html } from "@react-three/drei";
 import * as THREE from "three";
 import { OBJLoader } from "three/examples/jsm/loaders/OBJLoader.js";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { getConfig } from "../api";
-import { RotateCcw } from "lucide-react";
+import { RotateCcw, Play, Pause } from "lucide-react";
+
+interface MRFZoneViz {
+  name: string;
+  origin: [number, number, number];
+  axis: [number, number, number];
+  rpm: number;
+  radius: number;
+  half_length: number;
+}
+
+interface GeometryViz {
+  filename: string;
+  role: string;
+  color: string;
+}
 
 interface MeshPreviewProps {
   caseName: string;
   /** Increment to force a re-fetch of the geometry file */
   refreshKey?: number;
+  /** Optional: multiple geometries to render with different colors */
+  geometries?: GeometryViz[];
+  /** Optional: MRF zones to visualize as translucent cylinders + axis arrows */
+  mrfZones?: MRFZoneViz[];
+  /** Whether MRF rotation animation is playing */
+  playing?: boolean;
+  /** Callback when play/pause is toggled */
+  onPlayToggle?: () => void;
 }
 
 function MeshModel({ geometry }: { geometry: THREE.BufferGeometry }) {
@@ -115,6 +138,178 @@ function STLModel({ url }: { url: string }) {
 
   if (!geometry) return null;
   return <MeshModel geometry={geometry} />;
+}
+
+/** STL model rendered at original coordinates with a specific color (for multi-geometry mode) */
+function ColoredSTLModel({ url, color }: { url: string; color: string }) {
+  const [geometry, setGeometry] = useState<THREE.BufferGeometry | null>(null);
+
+  useEffect(() => {
+    const loader = new STLLoader();
+    loader.load(
+      url,
+      (geo) => { geo.computeVertexNormals(); setGeometry(geo); },
+      undefined,
+      (err) => console.error("STL load error:", err),
+    );
+  }, [url]);
+
+  if (!geometry) return null;
+  return (
+    <group>
+      <mesh geometry={geometry}>
+        <meshStandardMaterial color={color} roughness={0.6} metalness={0.1} side={THREE.DoubleSide} />
+      </mesh>
+      <mesh geometry={geometry}>
+        <meshBasicMaterial color="#ffffff" wireframe transparent opacity={0.04} />
+      </mesh>
+    </group>
+  );
+}
+
+/** STL model that rotates around an MRF axis when playing.
+ *
+ * The rotation pivot is the geometry's own bounding-box center projected onto
+ * the rotation axis — so the part spins in place rather than orbiting.
+ * Because this component lives inside MultiGeometryGroup (which applies
+ * center+scale), we work in the geometry's original coordinate space and
+ * let the parent group handle the transform to screen space.
+ */
+function AnimatedRotatingModel({
+  url, color, origin, axis, rpm, playing,
+}: {
+  url: string; color: string;
+  origin: [number, number, number]; axis: [number, number, number];
+  rpm: number; playing: boolean;
+}) {
+  const groupRef = useRef<THREE.Group>(null);
+  const pivotRef = useRef<THREE.Group>(null);
+  const axisVec = useMemo(() => new THREE.Vector3(...axis).normalize(), [axis]);
+  const originVec = useMemo(() => new THREE.Vector3(...origin), [origin]);
+
+  // Visual speed: cap at 120 RPM for readability
+  const visualOmega = useMemo(() => {
+    const cappedRpm = Math.min(Math.abs(rpm), 120);
+    return (Math.sign(rpm) || 1) * cappedRpm * 2 * Math.PI / 60;
+  }, [rpm]);
+
+  useFrame((_, delta) => {
+    if (!playing || !pivotRef.current) return;
+    // Pure rotation around the axis — the pivot group is positioned at the
+    // MRF origin so rotateOnAxis spins the geometry in place.
+    pivotRef.current.rotateOnAxis(axisVec, visualOmega * delta);
+  });
+
+  // Pivot group is positioned at the MRF origin.  The child geometry is
+  // offset by -origin so the origin becomes the local (0,0,0), making
+  // rotateOnAxis spin around the correct point.
+  return (
+    <group ref={pivotRef} position={[originVec.x, originVec.y, originVec.z]}>
+      <group position={[-originVec.x, -originVec.y, -originVec.z]}>
+        <ColoredSTLModel url={url} color={color} />
+      </group>
+    </group>
+  );
+}
+
+/** Translucent cylinder + rotation axis arrow for MRF zone visualization */
+function MRFZoneCylinder({ zone }: { zone: MRFZoneViz }) {
+  const [ox, oy, oz] = zone.origin;
+  const [ax, ay, az] = zone.axis;
+
+  // Compute rotation quaternion to align cylinder (default Y-up) with zone axis
+  const quaternion = useMemo(() => {
+    const defaultAxis = new THREE.Vector3(0, 1, 0);
+    const targetAxis = new THREE.Vector3(ax, ay, az).normalize();
+    const q = new THREE.Quaternion();
+    q.setFromUnitVectors(defaultAxis, targetAxis);
+    return q;
+  }, [ax, ay, az]);
+
+  const euler = useMemo(() => {
+    const e = new THREE.Euler();
+    e.setFromQuaternion(quaternion);
+    return [e.x, e.y, e.z] as [number, number, number];
+  }, [quaternion]);
+
+  return (
+    <group position={[ox, oy, oz]}>
+      {/* Translucent cylinder */}
+      <mesh rotation={euler}>
+        <cylinderGeometry args={[zone.radius, zone.radius, zone.half_length * 2, 32, 1, false]} />
+        <meshStandardMaterial color="#4ade80" transparent opacity={0.15} side={THREE.DoubleSide} depthWrite={false} />
+      </mesh>
+      {/* Wireframe */}
+      <mesh rotation={euler}>
+        <cylinderGeometry args={[zone.radius, zone.radius, zone.half_length * 2, 32, 1, false]} />
+        <meshBasicMaterial color="#4ade80" wireframe transparent opacity={0.3} />
+      </mesh>
+      {/* Rotation axis arrow */}
+      <arrowHelper
+        args={[
+          new THREE.Vector3(ax, ay, az).normalize(),
+          new THREE.Vector3(0, 0, 0),
+          zone.radius * 1.5,
+          "#4ade80",
+          zone.radius * 0.3,
+          zone.radius * 0.15,
+        ]}
+      />
+      {/* RPM label */}
+      <Html
+        position={[ax * zone.radius * 1.8, ay * zone.radius * 1.8, az * zone.radius * 1.8]}
+        center
+        style={{
+          fontSize: 10,
+          fontFamily: "var(--font-mono, monospace)",
+          color: "#4ade80",
+          fontWeight: 600,
+          whiteSpace: "nowrap",
+          userSelect: "none",
+          pointerEvents: "none",
+          textShadow: "0 0 4px rgba(0,0,0,0.8)",
+        }}
+      >
+        {zone.rpm} RPM
+      </Html>
+    </group>
+  );
+}
+
+/** Wrapper that auto-centers and scales a group of geometries loaded at original coordinates */
+function MultiGeometryGroup({ children, geometryUrls }: { children: React.ReactNode; geometryUrls: string[] }) {
+  const groupRef = useRef<THREE.Group>(null);
+  const [fitKey, setFitKey] = useState(0);
+
+  // When geometry URLs change, wait for meshes to load then refit
+  useEffect(() => {
+    // Reset transform immediately so new meshes render at real coords
+    if (groupRef.current) {
+      groupRef.current.position.set(0, 0, 0);
+      groupRef.current.scale.setScalar(1);
+    }
+    const timer = setTimeout(() => setFitKey(k => k + 1), 600);
+    return () => clearTimeout(timer);
+  }, [geometryUrls.join(",")]);
+
+  // Compute bounding box and center+scale the group
+  useEffect(() => {
+    if (!groupRef.current) return;
+    const box = new THREE.Box3().setFromObject(groupRef.current);
+    if (box.isEmpty()) return;
+    const center = new THREE.Vector3();
+    box.getCenter(center);
+    const size = new THREE.Vector3();
+    box.getSize(size);
+    const maxDim = Math.max(size.x, size.y, size.z);
+    if (maxDim > 0) {
+      const scale = 4 / maxDim;
+      groupRef.current.position.set(-center.x * scale, -center.y * scale, -center.z * scale);
+      groupRef.current.scale.setScalar(scale);
+    }
+  }, [fitKey]);
+
+  return <group ref={groupRef}>{children}</group>;
 }
 
 /** Colored axis arrows with HTML labels showing simulation directions */
@@ -226,7 +421,9 @@ function CameraReset({ resetTrigger }: { resetTrigger: number }) {
   return null;
 }
 
-export default function MeshPreview({ caseName, refreshKey = 0 }: MeshPreviewProps) {
+export default function MeshPreview({ caseName, refreshKey = 0, geometries, mrfZones, playing = false, onPlayToggle }: MeshPreviewProps) {
+  const isMultiGeo = geometries && geometries.length > 0;
+  const hasMrf = mrfZones && mrfZones.length > 0;
   const [fileUrl, setFileUrl] = useState<string | null>(null);
   const [fileType, setFileType] = useState<"obj" | "stl" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -234,7 +431,10 @@ export default function MeshPreview({ caseName, refreshKey = 0 }: MeshPreviewPro
   const [resetCount, setResetCount] = useState(0);
   const blobUrlRef = useRef<string | null>(null);
 
+  // Single-geometry loading (skipped in multi-geo mode — each ColoredSTLModel loads itself)
   useEffect(() => {
+    if (isMultiGeo) { setLoading(false); return; }
+
     const config = getConfig();
     let cancelled = false;
 
@@ -277,7 +477,7 @@ export default function MeshPreview({ caseName, refreshKey = 0 }: MeshPreviewPro
     loadGeometry();
 
     return () => { cancelled = true; };
-  }, [caseName, refreshKey]);
+  }, [caseName, refreshKey, isMultiGeo]);
 
   // Revoke blob URL on unmount
   useEffect(() => {
@@ -289,28 +489,31 @@ export default function MeshPreview({ caseName, refreshKey = 0 }: MeshPreviewPro
     };
   }, []);
 
-  if (loading) {
-    return (
-      <div
-        className="flex items-center justify-center"
-        style={{ height: 300, background: "var(--bg-editor)" }}
-      >
-        <p style={{ color: "var(--fg-muted)", fontSize: 13 }}>Loading geometry...</p>
-      </div>
-    );
-  }
+  // In multi-geo mode, skip the single-file loading gates
+  if (!isMultiGeo) {
+    if (loading) {
+      return (
+        <div
+          className="flex items-center justify-center"
+          style={{ height: 300, background: "var(--bg-editor)" }}
+        >
+          <p style={{ color: "var(--fg-muted)", fontSize: 13 }}>Loading geometry...</p>
+        </div>
+      );
+    }
 
-  if (error || !fileUrl || !fileType) {
-    return (
-      <div
-        className="flex items-center justify-center"
-        style={{ height: 300, background: "var(--bg-editor)", border: "1px solid var(--border)" }}
-      >
-        <p style={{ color: "var(--fg-muted)", fontSize: 13 }}>
-          {error ?? "3D preview unavailable"}
-        </p>
-      </div>
-    );
+    if (error || !fileUrl || !fileType) {
+      return (
+        <div
+          className="flex items-center justify-center"
+          style={{ height: 300, background: "var(--bg-editor)", border: "1px solid var(--border)" }}
+        >
+          <p style={{ color: "var(--fg-muted)", fontSize: 13 }}>
+            {error ?? "3D preview unavailable"}
+          </p>
+        </div>
+      );
+    }
   }
 
   return (
@@ -323,11 +526,38 @@ export default function MeshPreview({ caseName, refreshKey = 0 }: MeshPreviewPro
         <ambientLight intensity={0.4} />
         <directionalLight position={[10, 10, 5]} intensity={0.8} />
         <directionalLight position={[-5, -5, -5]} intensity={0.3} />
-        {fileType === "obj" ? (
+        {isMultiGeo ? (
+          <MultiGeometryGroup geometryUrls={geometries!.map(g => `${getConfig().backendUrl}/cases/${caseName}/geometry-file?filename=${g.filename}&_=${refreshKey}`)}>
+            {geometries!.map((g) => {
+              const url = `${getConfig().backendUrl}/cases/${caseName}/geometry-file?filename=${g.filename}&_=${refreshKey}`;
+              // Find if this geometry has an associated MRF zone
+              const zone = g.role === "rotating" && mrfZones
+                ? mrfZones[0] // MVP: one zone
+                : null;
+              if (zone && playing) {
+                return (
+                  <AnimatedRotatingModel
+                    key={g.filename}
+                    url={url}
+                    color={g.color}
+                    origin={zone.origin}
+                    axis={zone.axis}
+                    rpm={zone.rpm}
+                    playing={playing}
+                  />
+                );
+              }
+              return <ColoredSTLModel key={g.filename} url={url} color={g.color} />;
+            })}
+            {mrfZones?.map((zone) => (
+              <MRFZoneCylinder key={zone.name} zone={zone} />
+            ))}
+          </MultiGeometryGroup>
+        ) : fileType === "obj" && fileUrl ? (
           <OBJModel url={fileUrl} />
-        ) : (
+        ) : fileUrl ? (
           <STLModel url={fileUrl} />
-        )}
+        ) : null}
         <gridHelper args={[10, 10, "#333333", "#222222"]} rotation={[-Math.PI / 2, 0, 0]} />
         <AxisHelper />
         <GroundPlane />
@@ -339,26 +569,43 @@ export default function MeshPreview({ caseName, refreshKey = 0 }: MeshPreviewPro
           zoomSpeed={1.2}
         />
       </Canvas>
-      {/* Reset camera button */}
-      <button
-        onClick={() => setResetCount((c) => c + 1)}
-        title="Reset camera"
-        style={{
-          position: "absolute",
-          top: 8,
-          right: 8,
-          background: "rgba(30,30,30,0.8)",
-          border: "1px solid var(--border)",
-          borderRadius: 2,
-          color: "var(--fg)",
-          padding: "4px 6px",
-          cursor: "pointer",
-          display: "flex",
-          alignItems: "center",
-        }}
-      >
-        <RotateCcw size={14} />
-      </button>
+      {/* Toolbar buttons */}
+      <div style={{ position: "absolute", top: 8, right: 8, display: "flex", gap: 4 }}>
+        {hasMrf && onPlayToggle && (
+          <button
+            onClick={onPlayToggle}
+            title={playing ? "Pause rotation" : "Preview rotation"}
+            style={{
+              background: playing ? "rgba(74,222,128,0.3)" : "rgba(30,30,30,0.8)",
+              border: `1px solid ${playing ? "#4ade80" : "var(--border)"}`,
+              borderRadius: 2,
+              color: playing ? "#4ade80" : "var(--fg)",
+              padding: "4px 6px",
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+            }}
+          >
+            {playing ? <Pause size={14} /> : <Play size={14} />}
+          </button>
+        )}
+        <button
+          onClick={() => setResetCount((c) => c + 1)}
+          title="Reset camera"
+          style={{
+            background: "rgba(30,30,30,0.8)",
+            border: "1px solid var(--border)",
+            borderRadius: 2,
+            color: "var(--fg)",
+            padding: "4px 6px",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+          }}
+        >
+          <RotateCcw size={14} />
+        </button>
+      </div>
       {/* Legend */}
       <div
         style={{

@@ -172,6 +172,33 @@ export interface ReynoldsResult {
   regime: "laminar" | "transitional" | "turbulent";
 }
 
+// Multi-geometry + MRF types
+
+export interface GeometryEntry {
+  filename: string;
+  role: "body" | "rotating";
+  refinement_min: number;
+  refinement_max: number;
+  triangles?: number;
+  bounds?: { min: number[]; max: number[] };
+  mrf_zone?: string;
+  zone_name?: string;
+}
+
+export interface MRFZone {
+  name: string;
+  origin: [number, number, number];
+  axis: [number, number, number];
+  rpm: number;
+  radius: number;
+  half_length: number;
+}
+
+export interface GeometryListResponse {
+  geometries: GeometryEntry[];
+  mrf_zones: MRFZone[];
+}
+
 // Diagnostic types
 export interface DiagnosticResult {
   passed: boolean;
