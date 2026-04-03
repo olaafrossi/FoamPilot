@@ -295,6 +295,13 @@ export default function DropZonePage() {
     return () => window.removeEventListener("resize", handler);
   }, []);
 
+  // Clean up invalid file timer on unmount
+  useEffect(() => {
+    return () => {
+      if (invalidTimerRef.current) clearTimeout(invalidTimerRef.current);
+    };
+  }, []);
+
   // Templates
   const [templates, setTemplates] = useState<Template[]>([]);
   useEffect(() => {
@@ -648,11 +655,13 @@ export default function DropZonePage() {
     setSuggestions(null);
     setErrorInfo(null);
     setLogLines([]);
+    logLinesRef.current = [];
     setPipelineProgress(0);
     setSolverIteration(0);
     setLastResidual(null);
     setResidualHistory([]);
-  }, []);
+    setGlobalError(null);
+  }, [setGlobalError]);
 
   // -------------------------------------------------------------------------
   // Keyboard: Enter/Space on drop zone opens file picker
