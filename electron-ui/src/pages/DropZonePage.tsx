@@ -10,6 +10,8 @@ import { useStopwatch, formatElapsed } from "../hooks/useStopwatch";
 import {
   createCase,
   uploadGeometry,
+  autoAlignGeometry,
+  transformGeometry,
   classifyGeometry,
   getSuggestions,
   runCommands,
@@ -35,6 +37,7 @@ type PageState = "idle" | "processing" | "results" | "error";
 
 type PipelineStep =
   | "uploading"
+  | "aligning"
   | "classifying"
   | "configuring"
   | "meshing_sfe"
@@ -60,12 +63,30 @@ interface ErrorDiagnosis {
   fix: string;
 }
 
-function diagnoseError(step: PipelineStep, logLines: string[]): ErrorDiagnosis {
+function diagnoseError(step: PipelineStep, logLines: string[], errMsg?: string): ErrorDiagnosis {
   const tail = logLines.slice(-50).join("\n");
 
-  // Upload / classification errors
+  // Timeout detection — applies to any step
+  if (errMsg && /timed out/i.test(errMsg)) {
+    const stepLabel = step === "solving" ? "Solver" : step.startsWith("meshing") ? "Meshing" : "Command";
+    return { title: `${stepLabel} timed out`, diagnosis: errMsg, fix: "The simulation needed more time than allowed. Try a coarser mesh or fewer iterations." };
+  }
+
+  // Upload / classification errors — use the actual backend error when available
   if (step === "uploading" || step === "classifying") {
-    if (tail.includes("Empty file") || logLines.length === 0)
+    if (errMsg) {
+      if (/too small|empty/i.test(errMsg))
+        return { title: "Empty file", diagnosis: "Your STL has no geometry data.", fix: "Re-export from your CAD tool and try again." };
+      if (/degenerate/i.test(errMsg))
+        return { title: "Degenerate geometry", diagnosis: errMsg, fix: "The geometry is too flat or thin. Re-export with correct units or check your model." };
+      if (/unsupported file type/i.test(errMsg))
+        return { title: "Unsupported file", diagnosis: errMsg, fix: "Only .stl and .obj files are supported." };
+      if (/failed to parse/i.test(errMsg))
+        return { title: "Invalid STL", diagnosis: errMsg, fix: "The file may be corrupted. Re-export from your CAD tool and try again." };
+      // Fallback: show the actual backend error
+      return { title: "Upload failed", diagnosis: errMsg, fix: "Check your file and try again." };
+    }
+    if (tail.includes("Empty file"))
       return { title: "Empty file", diagnosis: "Your STL has no geometry data.", fix: "Re-export from your CAD tool and try again." };
   }
 
@@ -250,6 +271,7 @@ export default function DropZonePage() {
   const [currentStep, setCurrentStepRaw] = useState<PipelineStep>("uploading");
   const [steps, setSteps] = useState<Record<PipelineStep, StepStatus>>({
     uploading: { state: "pending", label: "Uploading geometry" },
+    aligning: { state: "pending", label: "Aligning geometry" },
     classifying: { state: "pending", label: "Classifying geometry" },
     configuring: { state: "pending", label: "Generating configuration" },
     meshing_sfe: { state: "pending", label: "Extracting surface features" },
@@ -380,6 +402,8 @@ export default function DropZonePage() {
 
       // Timeout guard to prevent infinite hangs
       const timeoutId = setTimeout(() => {
+        // Cancel the backend job so it doesn't keep consuming resources
+        if (currentJobRef.current) cancelJob(currentJobRef.current).catch(() => {});
         cleanup();
         reject(new Error(`Command timed out after ${timeoutMs / 1000}s`));
       }, timeoutMs);
@@ -425,6 +449,7 @@ export default function DropZonePage() {
     // Reset all steps
     setSteps({
       uploading: { state: "pending", label: "Uploading geometry" },
+      aligning: { state: "pending", label: "Aligning geometry" },
       classifying: { state: "pending", label: "Classifying geometry" },
       configuring: { state: "pending", label: "Generating configuration" },
       meshing_sfe: { state: "pending", label: "Extracting surface features" },
@@ -469,6 +494,31 @@ export default function DropZonePage() {
         markDone("uploading", `Template: ${templateName}`);
       }
       setPipelineProgress(12);
+
+      // Step 1.5: Auto-align geometry
+      setCurrentStep("aligning");
+      markRunning("aligning");
+      try {
+        if (!file) {
+          markDone("aligning", "Template pre-aligned");
+        } else {
+          const alignment = await autoAlignGeometry(cName);
+          if (alignment.skipped) {
+            markDone("aligning", "Already aligned");
+          } else {
+            await transformGeometry(cName, {
+              translate_x: alignment.translate_x,
+              translate_y: alignment.translate_y,
+              translate_z: alignment.translate_z,
+            });
+            markDone("aligning", alignment.reasons.join(" \u00b7 "));
+          }
+        }
+      } catch {
+        // Non-fatal — continue pipeline with original geometry
+        markDone("aligning", "Skipped (auto-align unavailable)");
+      }
+      setPipelineProgress(15);
 
       // Step 2: Classify geometry
       setCurrentStep("classifying");
@@ -531,7 +581,7 @@ export default function DropZonePage() {
           setPipelineProgress(38 + Math.round(meshProgress * 22)); // 38-60
           markRunning("meshing_snappy", `${cells.toLocaleString()} cells`);
         }
-      });
+      }, 1_800_000); // 30 min timeout for meshing
       if (meshResult.exitCode !== 0) throw new Error("snappyHexMesh failed");
       markDone("meshing_snappy");
       setPipelineProgress(62);
@@ -566,7 +616,7 @@ export default function DropZonePage() {
           cancelledRef.current = true;
           if (currentJobRef.current) cancelJob(currentJobRef.current).catch(() => {});
         }
-      });
+      }, 3_600_000); // 1 hour timeout for solver (decomposePar + simpleFoam + reconstructPar)
 
       if (solveResult.exitCode !== 0 && !cancelledRef.current) throw new Error("simpleFoam failed");
       const diverged = cancelledRef.current;
@@ -596,7 +646,7 @@ export default function DropZonePage() {
       }
 
       markError(currentStepRef.current);
-      setErrorInfo(diagnoseError(currentStepRef.current, logLinesRef.current));
+      setErrorInfo(diagnoseError(currentStepRef.current, logLinesRef.current, errMsg));
       setPageState("error");
       setGlobalError(errMsg);
     }

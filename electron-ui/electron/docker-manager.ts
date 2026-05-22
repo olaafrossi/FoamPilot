@@ -118,6 +118,18 @@ export class DockerManager {
         fs.copyFileSync(resourceCompose, this.composeFile);
       }
     }
+
+    // Seed templates from extraResources if the templates dir is empty
+    const templatesDir = path.join(this.dataDir, "templates");
+    const hasTemplates = fs.readdirSync(templatesDir).some(
+      (f) => fs.statSync(path.join(templatesDir, f)).isDirectory(),
+    );
+    if (!hasTemplates) {
+      const resourceTemplates = this.getResourceTemplatesPath();
+      if (resourceTemplates && fs.existsSync(resourceTemplates)) {
+        this.copyDirRecursive(resourceTemplates, templatesDir);
+      }
+    }
   }
 
   /** Write the .env file used by docker compose. */
@@ -276,6 +288,32 @@ export class DockerManager {
     const devPath = path.join(__dirname, "..", "..", "docker", "docker-compose.prod.yml");
     if (fs.existsSync(devPath)) return devPath;
     return null;
+  }
+
+  /** Get the path to templates bundled in extraResources. */
+  private getResourceTemplatesPath(): string | null {
+    if (app.isPackaged) {
+      return path.join(process.resourcesPath, "templates");
+    }
+    // Dev mode: look relative to the project
+    const devPath = path.join(__dirname, "..", "..", "templates");
+    if (fs.existsSync(devPath)) return devPath;
+    return null;
+  }
+
+  /** Recursively copy a directory, skipping symlinks. */
+  private copyDirRecursive(src: string, dest: string): void {
+    if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
+    for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+      const srcPath = path.join(src, entry.name);
+      const destPath = path.join(dest, entry.name);
+      if (entry.isSymbolicLink()) continue; // skip symlinks (tutorials submodule)
+      if (entry.isDirectory()) {
+        this.copyDirRecursive(srcPath, destPath);
+      } else {
+        fs.copyFileSync(srcPath, destPath);
+      }
+    }
   }
 
   /** Run a full suite of Docker environment diagnostics. */

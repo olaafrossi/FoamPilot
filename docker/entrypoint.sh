@@ -41,6 +41,18 @@ if ! blockMesh -help >/dev/null 2>&1; then
     exit 1
 fi
 
+# ── Seed templates volume if empty ──────────────────────────────────
+# The Docker image bakes templates into /opt/foampilot/templates/.
+# When the host mounts an empty directory over FOAM_TEMPLATES, seed it.
+BAKED_TEMPLATES="/opt/foampilot/templates"
+if [ -d "$BAKED_TEMPLATES" ] && [ -n "$FOAM_TEMPLATES" ] && [ "$FOAM_TEMPLATES" != "$BAKED_TEMPLATES" ]; then
+    # Check if the mounted templates dir is empty (no subdirectories)
+    if [ -z "$(ls -A "$FOAM_TEMPLATES" 2>/dev/null)" ]; then
+        echo "Seeding templates from image into $FOAM_TEMPLATES..."
+        cp -r "$BAKED_TEMPLATES"/. "$FOAM_TEMPLATES"/
+    fi
+fi
+
 echo "OpenFOAM $(blockMesh -help 2>&1 | head -1) ready"
 echo "FOAM_RUN=$FOAM_RUN"
 

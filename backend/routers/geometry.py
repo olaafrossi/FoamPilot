@@ -381,6 +381,92 @@ async def transform_geometry(name: str, req: TransformRequest):
 
 
 # ---------------------------------------------------------------------------
+# GET /cases/{name}/auto-align
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{name}/auto-align")
+async def auto_align(name: str):
+    """Recommend alignment transforms for the auto-pipeline.
+
+    Pure read-only: does NOT modify any files.  Returns a translation
+    recommendation based on bounding-box analysis and the template's
+    ``domain_type``.  The caller (frontend) applies the transform via
+    the existing ``POST /cases/{name}/transform-geometry`` endpoint.
+    """
+    case_path = Path(validate_case_path(name))
+    if not case_path.is_dir():
+        raise HTTPException(status_code=404, detail=f"Case '{name}' not found")
+
+    # Find the primary STL
+    tri_dir = case_path / "constant" / "triSurface"
+    if not tri_dir.is_dir():
+        raise HTTPException(status_code=404, detail="No triSurface directory")
+    stl_files = [f for f in tri_dir.glob("*.stl") if not f.name.endswith(".gz")]
+    if not stl_files:
+        raise HTTPException(status_code=404, detail="No STL file found")
+    stl_file = stl_files[0]
+
+    # Parse geometry data
+    try:
+        bbox = stl_bounds(stl_file)
+    except (ValueError, struct.error) as exc:
+        raise HTTPException(status_code=422, detail=f"Failed to parse STL: {exc}")
+    y_stats = stl_y_stats(stl_file)
+
+    # Read domain_type from template.json (copied into case by createCase)
+    domain_type = "ground_vehicle"
+    meta_file = case_path / "template.json"
+    if meta_file.is_file():
+        try:
+            meta = json.loads(meta_file.read_text(encoding="utf-8"))
+            domain_type = meta.get("physics", {}).get("domain_type", "ground_vehicle")
+        except (json.JSONDecodeError, OSError):
+            pass
+
+    translate_x = 0.0
+    translate_y = 0.0
+    translate_z = 0.0
+    reasons: list[str] = []
+
+    # 1. Ground snap (ground_vehicle only): min_z → 0
+    if domain_type == "ground_vehicle" and abs(bbox.min_z) > 0.001:
+        translate_z = -bbox.min_z
+        reasons.append("Snapped to ground (Z=0)")
+
+    # 2. Half-model symmetry alignment: Y min near 0 but not exact
+    y_size = bbox.max_y - bbox.min_y
+    if y_size > 0.001 and y_stats.min_y >= -0.001:
+        min_near_zero = abs(y_stats.min_y) < 0.01 * y_size
+        if min_near_zero and abs(y_stats.min_y) > 0.0001:
+            translate_y = -y_stats.min_y
+            reasons.append("Half-model aligned (Y min \u2192 0)")
+        elif not min_near_zero and y_stats.min_y > 0.001:
+            translate_y = -y_stats.min_y
+            reasons.append("Snapped Y min to origin")
+
+    # 3. X centering
+    center_x = (bbox.min_x + bbox.max_x) / 2
+    if abs(center_x) > 0.001:
+        translate_x = -center_x
+        reasons.append("Centered X at origin")
+
+    skipped = len(reasons) == 0
+
+    return {
+        "rotate_x": 0.0,
+        "rotate_y": 0.0,
+        "rotate_z": 0.0,
+        "translate_x": round(translate_x, 6),
+        "translate_y": round(translate_y, 6),
+        "translate_z": round(translate_z, 6),
+        "reasons": reasons,
+        "domain_type": domain_type,
+        "skipped": skipped,
+    }
+
+
+# ---------------------------------------------------------------------------
 # GET /cases/{name}/mesh-quality
 # ---------------------------------------------------------------------------
 
@@ -421,6 +507,16 @@ async def mesh_quality(name: str):
 # GET /cases/{name}/results
 # ---------------------------------------------------------------------------
 
+def _finite(v: float | None) -> float | None:
+    """Replace inf/NaN with None so JSON serialization doesn't blow up."""
+    import math
+    if v is None:
+        return None
+    if math.isfinite(v):
+        return v
+    return None
+
+
 @router.get("/{name}/results")
 async def case_results(name: str):
     """Parse forceCoeffs output and return aerodynamic results."""
@@ -440,11 +536,11 @@ async def case_results(name: str):
             break  # Use the first match
 
     return {
-        "cd": result.cd,
-        "cl": result.cl,
-        "cm": result.cm,
-        "cd_pressure": result.cd_pressure,
-        "cd_viscous": result.cd_viscous,
+        "cd": _finite(result.cd),
+        "cl": _finite(result.cl),
+        "cm": _finite(result.cm),
+        "cd_pressure": _finite(result.cd_pressure),
+        "cd_viscous": _finite(result.cd_viscous),
         "iterations": result.iterations,
         "wall_time_seconds": result.wall_time_seconds,
         "converged": result.converged,

@@ -129,7 +129,10 @@ export async function uploadGeometry(
     method: "POST",
     body: formData,
   });
-  if (!res.ok) throw new Error(`Failed to upload geometry: ${res.statusText}`);
+  if (!res.ok) {
+    const detail = await res.json().then(j => j.detail).catch(() => res.statusText);
+    throw new Error(detail);
+  }
   return res.json();
 }
 
@@ -159,6 +162,27 @@ export async function transformGeometry(
   return res.json();
 }
 
+export interface AutoAlignResult {
+  rotate_x: number;
+  rotate_y: number;
+  rotate_z: number;
+  translate_x: number;
+  translate_y: number;
+  translate_z: number;
+  reasons: string[];
+  domain_type: string;
+  skipped: boolean;
+}
+
+export async function autoAlignGeometry(caseName: string): Promise<AutoAlignResult> {
+  const res = await fetch(api(`/cases/${caseName}/auto-align`));
+  if (!res.ok) {
+    const detail = await res.json().then(j => j.detail).catch(() => res.statusText);
+    throw new Error(detail);
+  }
+  return res.json();
+}
+
 export async function getFieldData(
   caseName: string,
   field: string = "p",
@@ -176,7 +200,10 @@ export async function getFieldData(
 
 export async function classifyGeometry(caseName: string): Promise<GeometryClassification> {
   const res = await fetch(api(`/cases/${caseName}/classify`));
-  if (!res.ok) throw new Error(`Failed to classify geometry: ${res.statusText}`);
+  if (!res.ok) {
+    const detail = await res.json().then(j => j.detail).catch(() => res.statusText);
+    throw new Error(detail);
+  }
   return res.json();
 }
 
