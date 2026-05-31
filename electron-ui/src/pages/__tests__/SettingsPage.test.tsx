@@ -6,7 +6,7 @@ import SettingsPage from "../SettingsPage";
 // ── Mock the api module ─────────────────────────────────────────
 vi.mock("../../api", () => ({
   getConfig: () => ({
-    backendUrl: "http://localhost:8000",
+    backendUrl: "http://localhost:9000",
     localCasesPath: "/cases",
     paraViewPath: "/usr/bin/paraview",
     cores: 4,
@@ -22,7 +22,7 @@ vi.mock("../../api", () => ({
 function mockFoamPilot(overrides: Partial<typeof window.foamPilot> = {}) {
   const base = {
     getConfig: () => Promise.resolve({
-      backendUrl: "http://localhost:8000",
+      backendUrl: "http://localhost:9000",
       localCasesPath: "/cases",
       paraViewPath: "/usr/bin/paraview",
       cores: 4,

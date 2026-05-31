@@ -2,7 +2,7 @@ services:
   foampilot:
     image: ghcr.io/olaafrossi/foampilot:${FOAMPILOT_VERSION:-latest}
     ports:
-      - "${FOAMPILOT_PORT:-8000}:8000"
+      - "${FOAMPILOT_PORT:-9000}:8000"
     volumes:
       - ${FOAMPILOT_CASES}:/home/openfoam/run
       - ${FOAMPILOT_TEMPLATES}:/home/openfoam/user-templates

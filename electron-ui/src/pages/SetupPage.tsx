@@ -322,7 +322,7 @@ export default function SetupPage({ onReady }: SetupPageProps) {
               step === "starting"
                 ? "Starting and checking health..."
                 : step === "ready"
-                  ? "Running on localhost:8000"
+                  ? "Running on localhost:9000"
                   : "Waiting..."
             }
             status={

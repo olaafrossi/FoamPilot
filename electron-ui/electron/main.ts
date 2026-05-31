@@ -44,7 +44,7 @@ function loadConfig(): {
   cores: number; dockerCpus: number; dockerMemory: number;
 } {
   const defaults = {
-    backendUrl: "http://127.0.0.1:8000",
+    backendUrl: "http://127.0.0.1:9000",
     localCasesPath: path.join(path.dirname(app.getAppPath()), "..", "cases"),
     paraViewPath: "C:\\Program Files\\ParaView 6.0.1\\bin\\paraview.exe",
     cores: 4,
@@ -243,9 +243,9 @@ ipcMain.handle("docker:pull", async (_, tag?: string) => {
 ipcMain.handle("docker:start", async () => {
   try {
     // Check port availability first
-    const portFree = await dockerManager.checkPort(8000);
+    const portFree = await dockerManager.checkPort(9000);
     if (!portFree) {
-      return { ok: false, error: "Port 8000 is already in use by another process" };
+      return { ok: false, error: "Port 9000 is already in use by another process" };
     }
     await dockerManager.up();
     // Wait for health
@@ -291,7 +291,7 @@ ipcMain.handle("docker:ping", async () => {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 3000);
-    const res = await fetch("http://127.0.0.1:8000/health", { signal: controller.signal });
+    const res = await fetch("http://127.0.0.1:9000/health", { signal: controller.signal });
     clearTimeout(timeout);
     return res.ok;
   } catch {

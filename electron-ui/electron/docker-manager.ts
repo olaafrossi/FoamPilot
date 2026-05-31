@@ -144,7 +144,7 @@ export class DockerManager {
 
     const lines = [
       `FOAMPILOT_VERSION=${version}`,
-      `FOAMPILOT_PORT=8000`,
+      `FOAMPILOT_PORT=9000`,
       `FOAMPILOT_CASES=${casesPath}`,
       `FOAMPILOT_TEMPLATES=${templatesPath}`,
       `FOAM_CORES=${cores}`,
@@ -239,7 +239,7 @@ export class DockerManager {
   }
 
   /** Health check: poll the backend /health endpoint with retries. */
-  async healthCheck(url: string = "http://127.0.0.1:8000/health", timeoutMs: number = 30000): Promise<boolean> {
+  async healthCheck(url: string = "http://127.0.0.1:9000/health", timeoutMs: number = 30000): Promise<boolean> {
     const start = Date.now();
     let delay = 500;
 

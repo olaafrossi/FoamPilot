@@ -447,7 +447,7 @@ export default function App() {
       });
     } else {
       const defaults: AppConfig = {
-        backendUrl: "http://127.0.0.1:8000",
+        backendUrl: "http://127.0.0.1:9000",
         localCasesPath: "C:\\Dev\\FoamPilot\\cases",
         paraViewPath: "C:\\Program Files\\ParaView 6.0.1\\bin\\paraview.exe",
         cores: 4,

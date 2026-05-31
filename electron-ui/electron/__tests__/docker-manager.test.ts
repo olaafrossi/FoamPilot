@@ -267,7 +267,7 @@ describe("DockerManager", () => {
       expect(content).toContain("FOAM_CORES=8");
       expect(content).toContain("DOCKER_CPUS=6");
       expect(content).toContain("DOCKER_MEMORY=12g");
-      expect(content).toContain("FOAMPILOT_PORT=8000");
+      expect(content).toContain("FOAMPILOT_PORT=9000");
     });
 
     it("should use defaults when dockerCpus and dockerMemory are undefined", async () => {

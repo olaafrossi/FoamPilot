@@ -4,7 +4,7 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
     ports:
-      - "8000:8000"
+      - "${FOAMPILOT_PORT:-9000}:8000"
     volumes:
       - ../cases:/home/openfoam/run
       - ../templates:/home/openfoam/templates

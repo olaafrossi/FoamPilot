@@ -65,7 +65,7 @@ No compiling OpenFOAM from source. No Linux partition. No SaaS subscription. Foa
  ✔ Pulls the OpenFOAM container image (~2 GB, one time)
            │
            ▼
- ✔ Starts the backend server on localhost:8000
+ ✔ Starts the backend server on localhost:9000
            │
            ▼
  Ready — start your first simulation
@@ -203,7 +203,7 @@ npm install
 npm run dev:electron
 ```
 
-The backend runs on `http://localhost:8000` and the Electron app connects automatically.
+The Docker backend runs on `http://localhost:9000` and the Electron app connects automatically.
 
 ### Option 2: Development Setup
 
@@ -228,7 +228,7 @@ Environment variables in `.env` (managed by the app):
 | Variable | Default | Description |
 |---|---|---|
 | `FOAMPILOT_VERSION` | `latest` | Container image tag |
-| `FOAMPILOT_PORT` | `8000` | Backend API port |
+| `FOAMPILOT_PORT` | `9000` | Backend API host port |
 | `FOAMPILOT_CASES` | (auto) | Path to simulation case storage |
 | `FOAMPILOT_TEMPLATES` | (auto) | Path to built-in templates |
 | `FOAM_CORES` | `4` | Parallel decomposition for OpenFOAM (mpirun -np) |
@@ -412,7 +412,7 @@ Each template includes complete `system/`, `constant/`, and `0/` directories wit
 
 ## API Reference
 
-The FastAPI backend exposes a REST + WebSocket API on port 8000.
+The Docker backend exposes the FastAPI REST + WebSocket API on host port 9000.
 
 <details>
 <summary><strong>Cases</strong></summary>
@@ -481,7 +481,7 @@ The FastAPI backend exposes a REST + WebSocket API on port 8000.
 
 </details>
 
-Interactive API docs are available at `http://localhost:8000/docs` (Swagger UI) when the backend is running.
+Interactive API docs are available at `http://localhost:9000/docs` (Swagger UI) when the Docker backend is running.
 
 ---
 
